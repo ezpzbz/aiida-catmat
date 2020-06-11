@@ -1,0 +1,37 @@
+{
+    "name": "aiida-bjm",
+    "author": "Pezhman Zarabadi-Poor",
+    "author_email": "pzp22@bath.ac.uk",
+    "description": "Collection of AiiDA WorkChains Developed in Morgan Group",
+    "url": "https://github.com/morgan-group-bath/aiida-bjm",
+    "license": "MIT License",
+    "classifiers": [
+        "Programming Language :: Python :: 3.6",
+        "Programming Language :: Python :: 3.7"
+    ],
+    "version": "0.1.0",
+    "setup_requires": ["reentry"],
+    "reentry_register": true,
+    "install_requires": [
+        "aiida-core>=1.1.0,<2.0.0"
+    ],
+    "entry_points": {
+        "aiida.workflows": [
+            "bjm.eos = aiida_bjm.workchains:EOSWorkChain"
+        ]
+    },
+    "data_files": [
+        [".", ["setup.json"]]
+    ],
+    "extras_require": {
+        "testing": [
+            "pytest==4.4.1"
+        ],
+        "pre-commit": [
+                "pre-commit==1.17.0",
+                "yapf==0.28.0",
+                "prospector==1.1.7",
+                "pylint==2.3.1"
+        ]
+    }
+}
