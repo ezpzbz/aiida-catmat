@@ -1,0 +1,288 @@
+Ac:
+  enmax: 172
+  symbol: Ac
+Ag:
+  enmax: 249
+  symbol: Ag
+Al:
+  enmax: 240
+  symbol: Al
+Am:
+  enmax: 255
+  symbol: Am
+Ar:
+  enmax: 266
+  symbol: Ar
+As:
+  enmax: 208
+  symbol: As
+At:
+  enmax: 161
+  symbol: At
+Au:
+  enmax: 229
+  symbol: Au
+B:
+  enmax: 318
+  symbol: B
+Ba:
+  enmax: 187
+  symbol: Ba_sv
+Be:
+  enmax: 247
+  symbol: Be
+Bi:
+  enmax: 242
+  symbol: Bi_d
+Br:
+  enmax: 216
+  symbol: Br
+C:
+  enmax: 400
+  symbol: C
+Ca:
+  enmax: 266
+  symbol: Ca_sv
+Cd:
+  enmax: 274
+  symbol: Cd
+Ce:
+  enmax: 273
+  symbol: Ce
+Cl:
+  enmax: 262
+  symbol: Cl
+Cm:
+  enmax: 257
+  symbol: Cm
+Co:
+  enmax: 267
+  symbol: Co
+Cr:
+  enmax: 265
+  symbol: Cr_pv
+Cs:
+  enmax: 220
+  symbol: Cs_sv
+Cu:
+  enmax: 295
+  symbol: Cu
+Dy:
+  enmax: 155
+  symbol: Dy_3
+Er:
+  enmax: 155
+  symbol: Er_3
+Eu:
+  enmax: 99
+  symbol: Eu_2
+F:
+  enmax: 400
+  symbol: F
+Fe:
+  enmax: 267
+  symbol: Fe
+Fr:
+  enmax: 214
+  symbol: Fr_sv
+Ga:
+  enmax: 282
+  symbol: Ga_d
+Gd:
+  enmax: 154
+  symbol: Gd_3
+Ge:
+  enmax: 310
+  symbol: Ge_d
+H:
+  enmax: 250
+  symbol: H
+He:
+  enmax: 478
+  symbol: He
+Hf:
+  enmax: 220
+  symbol: Hf_pv
+Hg:
+  enmax: 233
+  symbol: Hg
+Ho:
+  enmax: 154
+  symbol: Ho_3
+I:
+  enmax: 175
+  symbol: I
+In:
+  enmax: 239
+  symbol: In_d
+Ir:
+  enmax: 210
+  symbol: Ir
+K:
+  enmax: 259
+  symbol: K_sv
+Kr:
+  enmax: 185
+  symbol: Kr
+La:
+  enmax: 219
+  symbol: La
+Li:
+  enmax: 499
+  symbol: Li_sv
+Lu:
+  enmax: 154
+  symbol: Lu_3
+Mg:
+  enmax: 200
+  symbol: Mg
+Mn:
+  enmax: 269
+  symbol: Mn_pv
+Mo:
+  enmax: 242
+  symbol: Mo_sv
+N:
+  enmax: 400
+  symbol: N
+Na:
+  enmax: 259
+  symbol: Na_pv
+Nb:
+  enmax: 293
+  symbol: Nb_sv
+Nd:
+  enmax: 182
+  symbol: Nd_3
+Ne:
+  enmax: 343
+  symbol: Ne
+Ni:
+  enmax: 269
+  symbol: Ni
+Np:
+  enmax: 254
+  symbol: Np
+O:
+  enmax: 400
+  symbol: O
+Os:
+  enmax: 228
+  symbol: Os
+P:
+  enmax: 255
+  symbol: P
+Pa:
+  enmax: 252
+  symbol: Pa
+Pb:
+  enmax: 237
+  symbol: Pb_d
+Pd:
+  enmax: 250
+  symbol: Pd
+Pm:
+  enmax: 176
+  symbol: Pm_3
+Po:
+  enmax: 264
+  symbol: Po_d
+Pr:
+  enmax: 181
+  symbol: Pr_3
+Pt:
+  enmax: 230
+  symbol: Pt
+Pu:
+  enmax: 254
+  symbol: Pu
+Ra:
+  enmax: 237
+  symbol: Ra_sv
+Rb:
+  enmax: 220
+  symbol: Rb_sv
+Re:
+  enmax: 226
+  symbol: Re
+Rh:
+  enmax: 247
+  symbol: Rh_pv
+Rn:
+  enmax: 152
+  symbol: Rn
+Ru:
+  enmax: 240
+  symbol: Ru_pv
+S:
+  enmax: 258
+  symbol: S
+Sb:
+  enmax: 172
+  symbol: Sb
+Sc:
+  enmax: 222
+  symbol: Sc_sv
+Se:
+  enmax: 211
+  symbol: Se
+Si:
+  enmax: 245
+  symbol: Si
+Sm:
+  enmax: 177
+  symbol: Sm_3
+Sn:
+  enmax: 241
+  symbol: Sn_d
+Sr:
+  enmax: 229
+  symbol: Sr_sv
+Ta:
+  enmax: 223
+  symbol: Ta_pv
+Tb:
+  enmax: 155
+  symbol: Tb_3
+Tc:
+  enmax: 263
+  symbol: Tc_pv
+Te:
+  enmax: 174
+  symbol: Te
+Th:
+  enmax: 247
+  symbol: Th
+Ti:
+  enmax: 274
+  symbol: Ti_sv
+Tl:
+  enmax: 237
+  symbol: Tl_d
+Tm:
+  enmax: 149
+  symbol: Tm_3
+U:
+  enmax: 252
+  symbol: U
+V:
+  enmax: 263
+  symbol: V_sv
+W:
+  enmax: 223
+  symbol: W_sv
+Xe:
+  enmax: 153
+  symbol: Xe
+Y:
+  enmax: 202
+  symbol: Y_sv
+Yb:
+  enmax: 112
+  symbol: Yb_2
+Zn:
+  enmax: 276
+  symbol: Zn
+Zr:
+  enmax: 229
+  symbol: Zr_sv

@@ -17,7 +17,7 @@
     ],
     "entry_points": {
         "aiida.workflows": [
-            "bjm.eos = aiida_bjm.workchains:EOSWorkChain"
+            "bjm.eos = aiida_bjm.workchains:EosWorkChain"
         ]
     },
     "data_files": [
