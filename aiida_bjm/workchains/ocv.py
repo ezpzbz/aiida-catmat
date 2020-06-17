@@ -19,7 +19,7 @@ from aiida.engine import calcfunction
 from aiida.engine import ToContext, WorkChain
 # , append_, if_, while_
 
-import pymatgen as pmg
+# import pymatgen as pmg
 
 StructureData = DataFactory('structure') #pylint: disable=invalid-name
 
