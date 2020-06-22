@@ -1,27 +1,20 @@
 """
 VaspMultiStageWorkChain
-It is designed to perform following tasks:
+It is designed to perform  a flow of VASP calculations 
+based on pre-defined requested stages. Current implementation
+is tailored toward relaxation of structure by having an initial
+static calculation and final static calculation to ensure 
+electronic convergence as well as having accurate energies. 
 
-1- Relaxes a given structure using pre-defined protocol.
-We aim to include as many as well-tested protcols for
-different scenarios that can happen during calculations. 
-It means that ideally we should have workchain to start
-the calculations for us, inspect them, does the logic and 
-modify calculation setup if it is needed.
-
-TODO:
-These protcols, can be as simple as running with a constant
-set of parameters or having different set of settings/stages.
-
-2- Performs static calculations on the relaxed structure.
-This is seen in the workchain that one can do only SCF, or SCF and NSCF.
+Current implementation, takes the INCARs from Materials Project 
+InputSets.
 """
 import os
 
 import yaml
 
 from aiida import orm
-from aiida.common.extendeddicts import AttributeDict
+from aiida.common import AttributeDict
 from aiida.engine import calcfunction, WorkChain, ToContext, append_, while_, if_
 from aiida.plugins import WorkflowFactory
 
@@ -41,7 +34,7 @@ def setup_protocols(protocol_tag, structure, user_incar_settings):
     sets.
     """
     # Get pymathen structure object from AiiDA StructureData
-    structure = structure.get_pymatgen_structure()
+    structure = structure.get_pymatgen_structure(add_spin=True)
 
     # Get user-defined stages and alternative settings from yaml file
     thisdir = os.path.dirname(os.path.abspath(__file__))
@@ -70,12 +63,65 @@ def setup_protocols(protocol_tag, structure, user_incar_settings):
         protocol['incar_static'] = {}
         input_set = getattr(VaspInputSets, 'MPStaticSet')
         inputs = input_set(structure, user_incar_settings=user_incar_settings)
-        protocol['incar_static'] = inputs.incar
+        if protocol['stages']['initial_static']:
+            incar = inputs.incar
+            magmom = incar['MAGMOM']
+            for index, item in enumerate(magmom):
+                if item == 0:
+                    magmom[index] = 0.6
+                if item == -1:
+                    magmom[index] = -5
+                if item == 1:
+                    magmom[index] = 5
+            incar.update({
+                'LAECHG': False,
+                'LCHARG': False,
+                'LVHAR': False,
+                'EDIFF': 1e-4,
+                'MAGMOM': magmom
+            })
+            protocol['incar_static'] = incar
+        else:
+            # Same as above
+            incar = inputs.incar
+            magmom = incar['MAGMOM']
+            for index, item in enumerate(magmom):
+                if item == 0:
+                    magmom[index] = 0.6
+                if item == -1:
+                    magmom[index] = -5
+                if item == 1:
+                    magmom[index] = 5
+            incar.update({
+                'LAECHG': False,
+                'LCHARG': False,
+                'LVHAR': False,
+                'EDIFF': 1e-7,
+                'PREC': 'Accurate',
+                'MAGMOM': magmom 
+            })
+            protocol['incar_static'] = incar
     if protocol['stages']['relax']:
         protocol['incar_relax'] = {}
         input_set = getattr(VaspInputSets, 'MPRelaxSet')
         inputs = input_set(structure, user_incar_settings=user_incar_settings)
-        protocol['incar_relax'] = inputs.incar
+        incar = inputs.incar
+        magmom = incar['MAGMOM']
+        for index, item in enumerate(magmom):
+            if item == 0:
+                magmom[index] = 0.6
+            if item == -1:
+                magmom[index] = -5
+            if item == 1:
+                magmom[index] = 5
+        incar.update({
+            'LWAVE': True,
+            'EDIFF': 1e-6,
+            'PREC': 'Accurate',
+            'ADDGRID': True,
+            'MAGMOM': magmom
+        })
+        protocol['incar_relax'] = incar
     if protocol['stages']['nscf']:
         protocol['incar_nscf'] = {}
         input_set = getattr(VaspInputSets, 'MPNonSCFSet')
@@ -89,7 +135,7 @@ def get_stage_incar(protocol, stage):
     return orm.Dict(dict=protocol[stage.value])
 
 class VaspMultiStageWorkChain(WorkChain):
-    """Structure relaxation workchain."""
+    """Multi Stage Workchain"""
     _verbose = False
 
     @classmethod
@@ -138,7 +184,7 @@ class VaspMultiStageWorkChain(WorkChain):
         spec.expose_outputs(VaspBaseWorkChain)
         spec.output('relax.structure', valid_type=orm.StructureData, required=False)
         spec.output_namespace('final_incar', valid_type=orm.Dict, required=False, dynamic=True)
-        # spec.output_namespace('final_parameters', valid_type=orm.Dict, required=False, dynamic=True)
+        
 
     def initialize(self):
         """Initialize."""
