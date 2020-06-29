@@ -97,8 +97,8 @@ def setup_protocols(protocol_tag, structure, user_incar_settings):
                 'LCHARG': False,
                 'LVHAR': False,
                 'EDIFF': 1e-7,
-                'PREC': 'Accurate',
-                'MAGMOM': magmom 
+                'PREC': 'Normal',
+                'MAGMOM': magmom
             })
             protocol['incar_static'] = incar
     if protocol['stages']['relax']:
@@ -117,7 +117,7 @@ def setup_protocols(protocol_tag, structure, user_incar_settings):
         incar.update({
             'LWAVE': True,
             'EDIFF': 1e-6,
-            'PREC': 'Accurate',
+            'PREC': 'Normal',
             'ADDGRID': True,
             'MAGMOM': magmom
         })
@@ -133,6 +133,14 @@ def setup_protocols(protocol_tag, structure, user_incar_settings):
 @calcfunction
 def get_stage_incar(protocol, stage):
     return orm.Dict(dict=protocol[stage.value])
+
+@calcfunction
+def increase_nsw(params):
+    p = params.get_dict()
+    p.update({
+        'NSW':100
+    })
+    return orm.Dict(dict=p)
 
 class VaspMultiStageWorkChain(WorkChain):
     """Multi Stage Workchain"""
@@ -242,21 +250,18 @@ class VaspMultiStageWorkChain(WorkChain):
         settings related to the electronic structure.
         """
         return self.ctx.initial_static
-        # return not self.ctx.is_scf_converged
 
     def should_run_relax(self):
         """
         Run relaxation until it's converged or we reach the maximum allowed iteration.
         """
-        return self.ctx.relax
-        # return self.ctx.relax and not self.ctx.is_scf_converged and self.ctx.iteration < self.inputs.max_relax_iterations
-    
+        return (not self.ctx.is_strc_converged) and (self.ctx.iteration < self.inputs.max_relax_iterations)
+        
     def should_run_final_static(self):
         """
-        We want to have it on relaxed structure.
-        Later, we may have it optional.
+        We only wanna do it if we have a relaxed structure.
         """
-        return self.ctx.final_static
+        return self.ctx.is_strc_converged and self.ctx.final_static
 
     def run_static(self):
         """
@@ -272,11 +277,20 @@ class VaspMultiStageWorkChain(WorkChain):
         
         if self.ctx.is_strc_converged:
             self.ctx.inputs.restart_folder = self.ctx.workchain_relax[-1].outputs.remote_folder
+            self.ctx.inputs['metadata'].update({
+            'label': 'final_static',
+            'call_link_label': 'final_static',
+            })
+        else:
+            self.ctx.inputs['metadata'].update({
+            'label': 'initial_static',
+            'call_link_label': 'initial_static',
+            })
         
         inputs = prepare_process_inputs(VaspBaseWorkChain, self.ctx.inputs)
         
         running = self.submit(VaspBaseWorkChain, **inputs)
-        self.report("Submmited Static VaspBaseWorkchain <pk> {}".format(running.pk))
+        self.report(f"Submitted Static VaspBaseWorkchain <pk>:{running.pk}")
         return ToContext(workchain_static=(append_(running)))    
     
     def inspect_static(self):
@@ -287,20 +301,19 @@ class VaspMultiStageWorkChain(WorkChain):
 
         workchain = self.ctx.workchain_static[-1]
         if not workchain.is_finished_ok:
-            self.report("Something was wrong!")
+            self.report("The initial static calculation did not finish properly")
         else:
             with workchain.outputs.retrieved.open('vasprun.xml') as xml:
                 vasp_run = Vasprun(xml.name)
-            converged = vasp_run.converged
-            converged_electronic = vasp_run.converged_electronic
-            converged_ionic = vasp_run.converged_ionic
-            self.report(f'Fully converged {converged}')
-            self.report(f'SCF converged {converged_electronic}')
-            self.report(f'Ionic converged {converged_ionic}')
-            if self.ctx.is_strc_converged:
-                self.out('final_incar.final_static', workchain.inputs.parameters)
+            self.ctx.is_scf_converged = vasp_run.converged_electronic
+            if self.ctx.is_scf_converged:
+                self.report('SCF converged')
+                if self.ctx.is_strc_converged and self.ctx.final_static:
+                    self.out('final_incar.final_static', workchain.inputs.parameters)
+                else:
+                    self.out('final_incar.initial_static', workchain.inputs.parameters)
             else:
-                self.out('final_incar.initial_static', workchain.inputs.parameters)
+                self.ctx.is_scf_converged = False
              
     def run_relax(self):
         """
@@ -310,16 +323,34 @@ class VaspMultiStageWorkChain(WorkChain):
         self.ctx.inputs.settings.parser_settings.add_structure = True
         self.ctx.inputs.structure = self.ctx.current_structure
 
-        self.ctx.inputs.parameters = get_stage_incar(self.ctx.parameters, orm.Str('incar_relax'))
-
-        self.ctx.inputs.update(self.exposed_inputs(VaspBaseWorkChain, 'base'))
-        self.ctx.inputs.restart_folder = self.ctx.workchain_static[-1].outputs.remote_folder
         
+        if self.ctx.iteration == 0:
+            self.ctx.inputs.parameters = get_stage_incar(self.ctx.parameters, orm.Str('incar_relax'))
+        else:
+            # Context is already for relax. We just wanna increase NSW.
+            self.ctx.inputs.parameters = increase_nsw(self.ctx.inputs.parameters)
+
+        if self.ctx.inputs.parameters['ISPIN'] == 2:
+            self.ctx.inputs.settings.parser_settings.add_site_magnetization = True
+        
+        self.ctx.inputs.update(self.exposed_inputs(VaspBaseWorkChain, 'base'))
+        
+        # Setting up remote folder for restart
+        if self.ctx.iteration == 0:
+            self.ctx.inputs.restart_folder = self.ctx.workchain_static[-1].outputs.remote_folder
+        else:
+            self.ctx.inputs.restart_folder = self.ctx.workchain_relax[-1].outputs.remote_folder
+        
+        self.ctx.inputs['metadata'].update({
+            'label': f'relax_iteration_{self.ctx.iteration}',
+            'call_link_label': f'relax_iteration_{self.ctx.iteration}',
+            })
 
         inputs = prepare_process_inputs(VaspBaseWorkChain, self.ctx.inputs)
         
         running = self.submit(VaspBaseWorkChain, **inputs)
-        self.report("Submmited Relax VaspBaseWorkchain <pk> {}".format(running.pk))
+        self.report(f"Submitted Relax VaspBaseWorkchain <pk>:{running.pk}_Iteration_{self.ctx.iteration}")
+        self.ctx.iteration += 1
         return ToContext(workchain_relax=(append_(running)))    
 
     def inspect_relax(self):
@@ -330,21 +361,19 @@ class VaspMultiStageWorkChain(WorkChain):
 
         workchain = self.ctx.workchain_relax[-1]
         if not workchain.is_finished_ok:
-            self.report("Something was wrong!")
+            self.report("Relax calculation did not finish properly")
         else:
             with workchain.outputs.retrieved.open('vasprun.xml') as xml:
                 vasp_run = Vasprun(xml.name)
-            converged = vasp_run.converged
-            converged_electronic = vasp_run.converged_electronic
-            converged_ionic = vasp_run.converged_ionic
-            self.report(f'Fully converged in relax {converged}')
-            self.report(f'SCF converged in relax {converged_electronic}')
-            self.report(f'Ionic converged in relax {converged_ionic}')
-            self.ctx.is_strc_converged = True
-            self.ctx.relax = False
-            self.ctx.current_structure = workchain.outputs.structure
-            self.out('final_incar.relax', workchain.inputs.parameters)
-
+            self.ctx.is_strc_converged = vasp_run.converged
+            if self.ctx.is_strc_converged:
+                self.report(f'Fully converged in relax')
+                self.ctx.relax = False
+                self.out('final_incar.relax', workchain.inputs.parameters)
+                self.ctx.current_structure = workchain.outputs.structure
+            else:
+                self.report("Structure is not converged!")
+                
     def results(self):
         """Attach the remaining output results."""
 

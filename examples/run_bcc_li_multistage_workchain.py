@@ -33,7 +33,8 @@ def example_multistage_workchain_li(vasp_code):
         'GGA': 'PS',
         'ISMEAR': 0,
         'PREC': 'Normal',
-        'ICHARG': 0
+        'ICHARG': 0,
+        'NSW': 2
     }
 
     potential_family = 'PBE.54'
