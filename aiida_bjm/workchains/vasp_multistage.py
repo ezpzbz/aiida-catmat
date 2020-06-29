@@ -77,6 +77,7 @@ def setup_protocols(protocol_tag, structure, user_incar_settings):
                 'LAECHG': False,
                 'LCHARG': False,
                 'LVHAR': False,
+                'LWAVE': True,
                 'EDIFF': 1e-4,
                 'MAGMOM': magmom
             })
@@ -96,6 +97,7 @@ def setup_protocols(protocol_tag, structure, user_incar_settings):
                 'LAECHG': False,
                 'LCHARG': False,
                 'LVHAR': False,
+                'LWAVE': True,
                 'EDIFF': 1e-7,
                 'PREC': 'Normal',
                 'MAGMOM': magmom
@@ -132,7 +134,12 @@ def setup_protocols(protocol_tag, structure, user_incar_settings):
 
 @calcfunction
 def get_stage_incar(protocol, stage):
-    return orm.Dict(dict=protocol[stage.value])
+    d = protocol[stage.value]
+    if stage.value == 'incar_relax':
+        d.update({
+            'ISTART':1
+        })
+    return orm.Dict(dict=d)
 
 @calcfunction
 def increase_nsw(params):
