@@ -68,7 +68,7 @@ def setup_protocols(protocol_tag, structure, user_incar_settings):
     sets.
     """
     # Get pymathen structure object from AiiDA StructureData
-    structure = structure.get_pymatgen_structure(add_spin=True)
+    structure_pmg = structure.get_pymatgen_structure(add_spin=True)
 
     # Get user-defined stages and alternative settings from yaml file
     thisdir = os.path.dirname(os.path.abspath(__file__))
@@ -79,69 +79,7 @@ def setup_protocols(protocol_tag, structure, user_incar_settings):
     # User-defined INCAR settings passed to workchain.
     user_incar_settings = user_incar_settings.get_dict()
     
-    # Get Hubbard parameters if DFT+U is requested
-    if 'LDAU' in user_incar_settings:
-        if user_incar_settings['LDAU']:
-            hubbard_dict = {'LDAUU':{}}
-            hubbard_params = protocol['hubbard']['LDAUU']
-            symbol_set = structure.symbol_set
-            for symb in symbol_set:
-                if symb in hubbard_params:
-                    hubbard_dict['LDAUU'][symb] = hubbard_params[symb]
-        # Update user-defined INCAR settings with Hubbard parameters
-            dict_merge(user_incar_settings, hubbard_dict)
-        
-    # Get Input parameters for each stage.
-    # TODO: logic needs to improved. 
-    if protocol['stages']['initial_static'] or protocol['stages']['final_static']:
-        protocol['incar_static'] = {}
-        input_set = getattr(VaspInputSets, 'MPStaticSet')
-        inputs = input_set(structure, user_incar_settings=user_incar_settings)
-        if protocol['stages']['initial_static']:
-            incar = inputs.incar
-            magmom = incar['MAGMOM']
-            for index, item in enumerate(magmom):
-                if item == 0:
-                    magmom[index] = 0.6
-                if item == -1:
-                    magmom[index] = -5
-                if item == 1:
-                    magmom[index] = 5
-            incar.update({
-                'LAECHG': False,
-                'LCHARG': False,
-                'LVHAR': False,
-                'LWAVE': True,
-                'EDIFF': 1e-4,
-                'MAGMOM': magmom
-            })
-            protocol['incar_static'] = incar
-        else:
-            # Same as above
-            incar = inputs.incar
-            magmom = incar['MAGMOM']
-            for index, item in enumerate(magmom):
-                if item == 0:
-                    magmom[index] = 0.6
-                if item == -1:
-                    magmom[index] = -5
-                if item == 1:
-                    magmom[index] = 5
-            incar.update({
-                'LAECHG': False,
-                'LCHARG': False,
-                'LVHAR': False,
-                'LWAVE': True,
-                'EDIFF': 1e-7,
-                'PREC': 'Normal',
-                'MAGMOM': magmom
-            })
-            protocol['incar_static'] = incar
-    if protocol['stages']['relax']:
-        protocol['incar_relax'] = {}
-        input_set = getattr(VaspInputSets, 'MPRelaxSet')
-        inputs = input_set(structure, user_incar_settings=user_incar_settings)
-        incar = inputs.incar
+    def _update_magmoms(incar):
         magmom = incar['MAGMOM']
         for index, item in enumerate(magmom):
             if item == 0:
@@ -150,26 +88,106 @@ def setup_protocols(protocol_tag, structure, user_incar_settings):
                 magmom[index] = -5
             if item == 1:
                 magmom[index] = 5
+        return magmom
+
+    # # Get Hubbard parameters if DFT+U is requested
+    def _set_ldau(structure, protocol):
+        hubbard_dict = {
+            'LDAU': True,
+            'LDAUPRINT':1,
+            'LDAUTYPE':2
+        }
+        hubbard_params = protocol['hubbard']
+        LDAUU = []
+        LDAUJ = []
+        LDAUL = []
+        
+        kinds = structure.get_kind_names()
+        for kind in kinds: 
+            kind_no_digit = ''.join(i for i in kind if not i.isdigit()) 
+            if kind_no_digit in hubbard_params['LDAUU']:
+                LDAUU.append(hubbard_params['LDAUU'][kind_no_digit])
+                LDAUJ.append(hubbard_params['LDAUJ'][kind_no_digit])
+                LDAUL.append(hubbard_params['LDAUL'][kind_no_digit])
+            else: 
+                LDAUU.append(0)
+                LDAUJ.append(0)
+                LDAUL.append(-1)
+        hubbard_dict.update({
+            'LDAUU': LDAUU,
+            'LDAUJ': LDAUJ,
+            'LDAUL': LDAUL
+        })
+        protocol['ldau_section'] = hubbard_dict
+        return protocol
+
+    if user_incar_settings['LDAU']:
+        protocol = _set_ldau(structure, protocol)
+    # Get Input parameters for each stage.
+    if protocol['stages']['initial_static'] or protocol['stages']['final_static']:
+        input_set = getattr(VaspInputSets, 'MPStaticSet')
+        inputs = input_set(structure_pmg, user_incar_settings=user_incar_settings)
+        magmom = _update_magmoms(inputs.incar)
+        if protocol['stages']['initial_static']:
+            incar = inputs.incar
+            incar.update({
+                'LAECHG': False,
+                'LCHARG': False,
+                'LVHAR': False,
+                'LWAVE': True,
+                'EDIFF': 1e-4,
+                'MAGMOM': magmom
+            })
+            protocol['incar_static_initial'] = {}
+            if user_incar_settings['LDAU']:
+                dict_merge(incar, protocol['ldau_section'])
+                protocol['incar_static_initial'] = incar
+            else:
+                protocol['incar_static_initial'] = incar
+        if protocol['stages']['initial_static']:
+            incar = inputs.incar
+            incar.update({
+                'LAECHG': True,
+                'LCHARG': True,
+                'LVHAR': True,
+                'LWAVE': True,
+                'EDIFF': 1e-7,
+                'MAGMOM': magmom
+            })
+            protocol['incar_static_final'] = {}
+            if user_incar_settings['LDAU']:
+                dict_merge(incar, protocol['ldau_section'])
+                protocol['incar_static_final'] = incar
+            else:
+                protocol['incar_static_final'] = incar
+    if protocol['stages']['relax']:
+        input_set = getattr(VaspInputSets, 'MPRelaxSet')
+        inputs = input_set(structure_pmg, user_incar_settings=user_incar_settings)
+        incar = inputs.incar
+        magmom = _update_magmoms(inputs.incar)
         incar.update({
             'LWAVE': True,
             'EDIFF': 1e-6,
-            'PREC': 'Normal',
-            'ADDGRID': True,
             'MAGMOM': magmom
         })
-        protocol['incar_relax'] = incar
+        protocol['incar_relax'] = {}
+        if user_incar_settings['LDAU']:
+            dict_merge(incar, protocol['ldau_section'])
+            protocol['incar_relax'] = incar
+        else:
+            protocol['incar_relax'] = incar
     if protocol['stages']['nscf']:
         protocol['incar_nscf'] = {}
         input_set = getattr(VaspInputSets, 'MPNonSCFSet')
-        inputs = input_set(structure, user_incar_settings=user_incar_settings)
+        inputs = input_set(structure_pmg, user_incar_settings=user_incar_settings)
         protocol['incar_nscf'] = inputs.incar
-            
+                
     return orm.Dict(dict=protocol)
 
 @calcfunction
 def get_stage_incar(protocol, stage):
     d = protocol[stage.value]
-    if stage.value == 'incar_relax':
+    if stage.value == 'incar_relax' or stage.value == 'incar_static_final':
         d.update({
             'ISTART':1
         })
@@ -179,7 +197,7 @@ def get_stage_incar(protocol, stage):
 def increase_nsw(params):
     p = params.get_dict()
     p.update({
-        'NSW':100
+        'NSW':300
     })
     return orm.Dict(dict=p)
 
@@ -304,15 +322,6 @@ class VaspMultiStageWorkChain(WorkChain):
         self.ctx.nscf = self.ctx.parameters['stages']['nscf']
 
         self._initialize_settings()
-        # self._get_potcar_mapping()
-
-        # self.ctx.settings_ok = False
-        # self.ctx.static_stage_idx = 0
-        # self.ctx.relax_stage_idx = 0
-        # self.ctx.static_stage_tag = f'relax_stage_{self.ctx.static_stage_idx}'
-        # self.ctx.relax_stage_tag = f'relax_stage_{self.ctx.relax_stage_idx}'
-        # self.ctx.settings_idx = 0
-        # self.ctx.settings_tag = f'settings_{self.ctx.settings_idx}'
 
     def _initialize_settings(self):
 
@@ -328,10 +337,7 @@ class VaspMultiStageWorkChain(WorkChain):
             except AttributeError:
                 settings.parser_settings = dict_entry
         self.ctx.inputs.settings = settings
-    
-    # def _get_potcar_mapping(self):
-    #     self.inputs.potential_mapping = get_potcar_mapping(self.ctx.current_structure, self.inputs.potcar_set)
-    
+        
     def should_run_initial_static(self):
         """
         Perform initial static calculation to refine
@@ -359,7 +365,10 @@ class VaspMultiStageWorkChain(WorkChain):
         self.ctx.inputs.settings.parser_settings.add_structure = False
         self.ctx.inputs.structure = self.ctx.current_structure
         
-        self.ctx.inputs.parameters = get_stage_incar(self.ctx.parameters, orm.Str('incar_static'))
+        if not self.ctx.is_strc_converged:
+            self.ctx.inputs.parameters = get_stage_incar(self.ctx.parameters, orm.Str('incar_static_initial'))
+        else:
+            self.ctx.inputs.parameters = get_stage_incar(self.ctx.parameters, orm.Str('incar_static_final'))
         
         if self.ctx.inputs.parameters['ISPIN'] == 2:
             self.ctx.inputs.settings.parser_settings.add_site_magnetization = True
@@ -416,12 +425,12 @@ class VaspMultiStageWorkChain(WorkChain):
         self.ctx.inputs.settings.parser_settings.add_structure = True
         self.ctx.inputs.structure = self.ctx.current_structure
 
-        
-        if self.ctx.iteration == 0:
-            self.ctx.inputs.parameters = get_stage_incar(self.ctx.parameters, orm.Str('incar_relax'))
-        else:
-            # Context is already for relax. We just wanna increase NSW.
-            self.ctx.inputs.parameters = increase_nsw(self.ctx.inputs.parameters)
+        self.ctx.inputs.parameters = get_stage_incar(self.ctx.parameters, orm.Str('incar_relax'))
+        # if self.ctx.iteration == 0:
+        #     self.ctx.inputs.parameters = get_stage_incar(self.ctx.parameters, orm.Str('incar_relax'))
+        # else:
+        #     # Context is already for relax. We just wanna increase NSW.
+        #     self.ctx.inputs.parameters = increase_nsw(self.ctx.inputs.parameters)
 
         if self.ctx.inputs.parameters['ISPIN'] == 2:
             self.ctx.inputs.settings.parser_settings.add_site_magnetization = True
@@ -471,10 +480,6 @@ class VaspMultiStageWorkChain(WorkChain):
                 
     def results(self):
         """Attach the remaining output results."""
-
-        # workchain = self.ctx.workchain_static[-1]
-        # workchain_relax = self.ctx.workchain_relax[-1]
-        # relaxed_structure = workchain_relax.outputs.structure
         
         self.out('output_parameters', extract_wrap_results(**self.ctx.all_outputs))
         if self.ctx.is_strc_converged:
