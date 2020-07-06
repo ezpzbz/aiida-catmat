@@ -22,7 +22,8 @@ def example_multistage_workchain_li(vasp_code):
     """Prepares the calculation and submits it to daemon """
     resources = {
         'num_machines': 1,
-        'num_cores_per_machine': 4
+        'num_cores_per_machine': 4,
+        'num_mpiprocs_per_machine': 4,
         }
     options = {
         'resources': resources,
@@ -44,7 +45,7 @@ def example_multistage_workchain_li(vasp_code):
     }
 
     potential_family = 'PBE.54'
-    potential_mapping = {'Li': 'Li_sv'}
+    # potential_mapping = {'Li': 'Li_sv'}
     
     # parser_settings = {'add_energies': True,
     #                    'add_forces': True,
@@ -65,7 +66,7 @@ def example_multistage_workchain_li(vasp_code):
     # })
 
     builder.base.potential_family = orm.Str(potential_family)
-    builder.base.potential_mapping = orm.Dict(dict=potential_mapping)
+    # builder.base.potential_mapping = orm.Dict(dict=potential_mapping)
     builder.base.kpoints = kpoints
 
     builder.base.verbose = orm.Bool(True)

@@ -34,11 +34,12 @@ def example_multistage_workchain_li(vasp_code):
         'ISMEAR': 0,
         'PREC': 'Normal',
         'ICHARG': 0,
-        'NSW': 2
+        'NSW': 50,
+        'LDAU': True
     }
 
     potential_family = 'PBE.54'
-    potential_mapping = {'Li': 'Li_sv'}
+    # potential_mapping = {'Li': 'Li_sv'}
     
     # parser_settings = {'add_energies': True,
     #                    'add_forces': True,
@@ -59,7 +60,7 @@ def example_multistage_workchain_li(vasp_code):
     # })
 
     builder.base.potential_family = orm.Str(potential_family)
-    builder.base.potential_mapping = orm.Dict(dict=potential_mapping)
+    # builder.base.potential_mapping = orm.Dict(dict=potential_mapping)
     builder.base.kpoints = kpoints
 
     builder.base.verbose = orm.Bool(True)

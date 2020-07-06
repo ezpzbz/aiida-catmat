@@ -27,6 +27,40 @@ from pymatgen.io.vasp import Vasprun
 VaspBaseWorkChain = WorkflowFactory('vasp.vasp') #pylint: disable=invalid-name
 
 @calcfunction
+def get_potcar_mapping(structure, potcar_set_tag):
+    thisdir = os.path.dirname(os.path.abspath(__file__))
+    yaml_path = os.path.join(thisdir, '..', 'data', 'potcar_sets.yaml')
+    
+    with open(yaml_path) as default:
+        potcar_dict = yaml.safe_load(default)
+        sel_potcars = potcar_dict[potcar_set_tag.value]
+        
+    mapping = {}
+    kinds = structure.get_kind_names()
+    for kind in kinds:
+        kind_no_digit = ''.join(i for i in kind if not i.isdigit())
+        # This is workaround for structures with magnetic ordering.
+        # Issue is that when we generate structure and assign initial
+        # magnetic sites, they will be recongnized with different kinds.
+        # Like: Fe1 and Fe2
+        # We need to have separate entries for them in mapping so
+        # aiida-vasp can construct the POTCAR
+        # BUT after relaxation, the parsed structure does not carry same logic.
+        # Although we have exact coverged magmoms for each site, these are not reflected
+        # into the exported AiiDA structure object.
+        # SO, when we try to run a consequent calculation on the relaxed structure,
+        # We would face an excpetion saying that for example Fe is not provided in
+        # mapping dict. 
+        # Anyway, we provide exact magmoms for the conseuqnt calculations, we need to overcome this
+        # issue. Either by having a function that assigns the magnetic sites on relax structure
+        # which is not a good idea as it cannot handle them properly due to the aiida structure object
+        # limitations. 
+        # OR we can provide an entry in mapping dict for Fe itself from the beginning.
+        mapping[kind_no_digit] = sel_potcars[kind_no_digit]
+        mapping[kind] = sel_potcars[kind_no_digit]
+    return orm.Dict(dict=mapping)
+
+@calcfunction
 def setup_protocols(protocol_tag, structure, user_incar_settings):
     """
     Reads stages from provided protocol file, and 
@@ -149,6 +183,34 @@ def increase_nsw(params):
     })
     return orm.Dict(dict=p)
 
+@calcfunction
+def extract_wrap_results(**all_outputs):
+    results_dict = {
+        'energy_unit': 'eV'
+    }
+    if 'initial_static' in all_outputs.keys():
+        energy = all_outputs['initial_static']['total_energies']['energy_no_entropy']
+        results_dict['total_energy_initial_static'] = energy
+    if 'relax_misc' in all_outputs.keys():
+        energy = all_outputs['relax_misc']['total_energies']['energy_no_entropy']
+        results_dict['total_energy_relax'] = energy
+    if 'relax_mag' in all_outputs.keys():
+        magmoms = []
+        site_moms = all_outputs['relax_mag']['site_magnetization']['sphere']['x']['site_moment']
+        tot_mag_site = all_outputs['relax_mag']['site_magnetization']['sphere']['x']['total_magnetization']['tot']
+        tot_mag_full_cell = all_outputs['relax_mag']['site_magnetization']['full_cell']
+        for v in site_moms.values():
+            magmoms.append(v['tot'])
+        results_dict['magmoms'] = magmoms
+        results_dict['total_magnetizations_on_sites'] = tot_mag_site
+        results_dict['total_magnetizations_full_cell'] = tot_mag_full_cell
+    if 'final_static' in all_outputs.keys():
+        energy = all_outputs['final_static']['total_energies']['energy_no_entropy']
+        results_dict['total_energy_final_static'] = energy
+        
+    return orm.Dict(dict=results_dict)
+
+
 class VaspMultiStageWorkChain(WorkChain):
     """Multi Stage Workchain"""
     _verbose = False
@@ -158,7 +220,7 @@ class VaspMultiStageWorkChain(WorkChain):
         super(VaspMultiStageWorkChain, cls).define(spec)
         spec.expose_inputs(
             VaspBaseWorkChain, 
-            exclude=('parameters', 'structure', 'settings'), namespace='base')
+            exclude=('potential_mapping','parameters', 'structure', 'settings'), namespace='base')
         spec.input('structure', valid_type=(orm.StructureData, orm.CifData))
         spec.input('parameters', valid_type=orm.Dict)
         spec.input(
@@ -171,6 +233,17 @@ class VaspMultiStageWorkChain(WorkChain):
             valid_type=orm.Str,
             required=False,
             default=lambda: orm.Str('standard'))
+        spec.input(
+            'potcar_set',
+            valid_type=orm.Str,
+            default=lambda: orm.Str('VASP'),
+            help='Select which potcar set should be used to construct mappin. VASP or MPRelaxSet')
+        # spec.input(
+        #     'default_magmom',
+        #     valid_type=orm.Dict,
+        #     required=False,
+        #     help='Initial values for MAGMOM tag'
+        # )
         
         # spec.exit_code(0, 'NO_ERROR', message='the sun is shining')
         # spec.exit_code(300,
@@ -196,8 +269,9 @@ class VaspMultiStageWorkChain(WorkChain):
             cls.results,
         )
 
-        spec.expose_outputs(VaspBaseWorkChain)
+        # spec.expose_outputs(VaspBaseWorkChain)
         spec.output('relax.structure', valid_type=orm.StructureData, required=False)
+        spec.output('output_parameters', valid_type=orm.Dict, required=True)
         spec.output_namespace('final_incar', valid_type=orm.Dict, required=False, dynamic=True)
         
 
@@ -207,6 +281,9 @@ class VaspMultiStageWorkChain(WorkChain):
         self.ctx.is_scf_converged = False
         self.ctx.is_strc_converged = False
         self.ctx.inputs = AttributeDict()
+        self.ctx.inputs.potential_mapping = get_potcar_mapping(self.ctx.current_structure, self.inputs.potcar_set)
+        
+        self.ctx.all_outputs = {}
 
         self.ctx.iteration = 0
     
@@ -227,6 +304,7 @@ class VaspMultiStageWorkChain(WorkChain):
         self.ctx.nscf = self.ctx.parameters['stages']['nscf']
 
         self._initialize_settings()
+        # self._get_potcar_mapping()
 
         # self.ctx.settings_ok = False
         # self.ctx.static_stage_idx = 0
@@ -250,6 +328,9 @@ class VaspMultiStageWorkChain(WorkChain):
             except AttributeError:
                 settings.parser_settings = dict_entry
         self.ctx.inputs.settings = settings
+    
+    # def _get_potcar_mapping(self):
+    #     self.inputs.potential_mapping = get_potcar_mapping(self.ctx.current_structure, self.inputs.potcar_set)
     
     def should_run_initial_static(self):
         """
@@ -279,7 +360,9 @@ class VaspMultiStageWorkChain(WorkChain):
         self.ctx.inputs.structure = self.ctx.current_structure
         
         self.ctx.inputs.parameters = get_stage_incar(self.ctx.parameters, orm.Str('incar_static'))
-
+        
+        if self.ctx.inputs.parameters['ISPIN'] == 2:
+            self.ctx.inputs.settings.parser_settings.add_site_magnetization = True
         self.ctx.inputs.update(self.exposed_inputs(VaspBaseWorkChain, 'base'))
         
         if self.ctx.is_strc_converged:
@@ -298,7 +381,8 @@ class VaspMultiStageWorkChain(WorkChain):
         
         running = self.submit(VaspBaseWorkChain, **inputs)
         self.report(f"Submitted Static VaspBaseWorkchain <pk>:{running.pk}")
-        return ToContext(workchain_static=(append_(running)))    
+        return ToContext(workchain_static=(append_(running)))
+
     
     def inspect_static(self):
         """
@@ -317,8 +401,10 @@ class VaspMultiStageWorkChain(WorkChain):
                 self.report('SCF converged')
                 if self.ctx.is_strc_converged and self.ctx.final_static:
                     self.out('final_incar.final_static', workchain.inputs.parameters)
+                    self.ctx.all_outputs['final_static'] = workchain.outputs.misc
                 else:
                     self.out('final_incar.initial_static', workchain.inputs.parameters)
+                    self.ctx.all_outputs['initial_static'] = workchain.outputs.misc
             else:
                 self.ctx.is_scf_converged = False
              
@@ -377,6 +463,8 @@ class VaspMultiStageWorkChain(WorkChain):
                 self.report(f'Fully converged in relax')
                 self.ctx.relax = False
                 self.out('final_incar.relax', workchain.inputs.parameters)
+                self.ctx.all_outputs['relax_misc'] = workchain.outputs.misc
+                self.ctx.all_outputs['relax_mag'] = workchain.outputs.site_magnetization
                 self.ctx.current_structure = workchain.outputs.structure
             else:
                 self.report("Structure is not converged!")
@@ -384,9 +472,16 @@ class VaspMultiStageWorkChain(WorkChain):
     def results(self):
         """Attach the remaining output results."""
 
-        workchain = self.ctx.workchain_static[-1]
-        workchain_relax = self.ctx.workchain_relax[-1]
-        relaxed_structure = workchain_relax.outputs.structure
-        self.out('relax.structure', relaxed_structure)
-        self.out_many(self.exposed_outputs(workchain, VaspBaseWorkChain))
+        # workchain = self.ctx.workchain_static[-1]
+        # workchain_relax = self.ctx.workchain_relax[-1]
+        # relaxed_structure = workchain_relax.outputs.structure
+        
+        self.out('output_parameters', extract_wrap_results(**self.ctx.all_outputs))
+        if self.ctx.is_strc_converged:
+            self.out('relax.structure', self.ctx.current_structure)
+        self.report('VaspMultiStageWorkChain finished successfull!')
+        # self.report(f'Output Dict <{self.outputs['output_parameters'].pk}>')
+        # self.out_many(self.exposed_outputs(workchain, VaspBaseWorkChain))
+
+        self.report('Output Dict <{}>'.format(self.outputs['output_parameters'].pk))
     
