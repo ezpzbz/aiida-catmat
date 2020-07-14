@@ -329,6 +329,7 @@ class VaspMultiStageWorkChain(WorkChain):
             settings = AttributeDict(self.inputs.settings.get_dict())
         else:
             settings = AttributeDict({'parser_settings': {}})
+            # settings = AttributeDict({'parser_settings': {}, 'ADDITIONAL_RETRIEVE_LIST':['INCAR']})
         
         if self.ctx.relax:
             dict_entry = {'add_structure': True}
@@ -369,6 +370,7 @@ class VaspMultiStageWorkChain(WorkChain):
             self.ctx.inputs.parameters = get_stage_incar(self.ctx.parameters, orm.Str('incar_static_initial'))
         else:
             self.ctx.inputs.parameters = get_stage_incar(self.ctx.parameters, orm.Str('incar_static_final'))
+            self.ctx.inputs.settings.ADDITIONAL_RETRIEVE_LIST = ['INCAR']
         
         if self.ctx.inputs.parameters['ISPIN'] == 2:
             self.ctx.inputs.settings.parser_settings.add_site_magnetization = True
