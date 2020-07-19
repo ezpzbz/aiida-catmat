@@ -95,7 +95,8 @@ def setup_protocols(protocol_tag, structure, user_incar_settings):
         hubbard_dict = {
             'LDAU': True,
             'LDAUPRINT':1,
-            'LDAUTYPE':2
+            'LDAUTYPE':2,
+            'LMAXMIX':4
         }
         hubbard_params = protocol['hubbard']
         LDAUU = []
