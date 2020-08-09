@@ -17,6 +17,7 @@
     ],
     "entry_points": {
         "aiida.workflows": [
+            "vasp.base = aiida_bjm.workchains:VaspBaseWorkChain",
             "bjm.eos = aiida_bjm.workchains:EosWorkChain",
             "bjm.ocv = aiida_bjm.workchains:VaspOcvWorkChain",
             "bjm.vasp_multistage = aiida_bjm.workchains:VaspMultiStageWorkChain"

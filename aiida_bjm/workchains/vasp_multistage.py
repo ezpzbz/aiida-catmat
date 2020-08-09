@@ -16,15 +16,17 @@ import yaml
 from aiida import orm
 from aiida.common import AttributeDict
 from aiida.engine import calcfunction, WorkChain, ToContext, append_, while_, if_
-from aiida.plugins import WorkflowFactory
+from aiida.plugins import DataFactory, WorkflowFactory
+from aiida.engine.processes.exit_code import ExitCode
 
-from aiida_bjm.calcfunctions import dict_merge, aiida_dict_merge
+from aiida_bjm.calcfunctions import dict_merge
 from aiida_bjm.utils import prepare_process_inputs
-
+# from aiida_vasp.utils.aiida_utils import get_data_class
 from pymatgen.io.vasp import sets as VaspInputSets
 from pymatgen.io.vasp import Vasprun
 
-VaspBaseWorkChain = WorkflowFactory('vasp.vasp') #pylint: disable=invalid-name
+VaspBaseWorkChain = WorkflowFactory('vasp.base') #pylint: disable=invalid-name
+PotcarData = DataFactory('vasp.potcar')
 
 @calcfunction
 def get_potcar_mapping(structure, potcar_set_tag):
@@ -236,12 +238,15 @@ class VaspMultiStageWorkChain(WorkChain):
 
     @classmethod
     def define(cls, spec):
-        super(VaspMultiStageWorkChain, cls).define(spec)
+        super().define(spec)
         spec.expose_inputs(
             VaspBaseWorkChain, 
-            exclude=('potential_mapping','parameters', 'structure', 'settings'), namespace='base')
+            include=['vasp.code', 'vasp.kpoints','vasp.restart_folder', 'vasp.metadata', 'vasp.potential'], namespace='vasp_base')
         spec.input('structure', valid_type=(orm.StructureData, orm.CifData))
         spec.input('parameters', valid_type=orm.Dict)
+        # spec.input('kpoints', valid_type=orm.KpointsData, required=False, help='The kpoints to use (KPOINTS).')
+        spec.input('potential_family', valid_type=orm.Str, required=True)
+        spec.input('potential_mapping', valid_type=orm.Dict, required=False)
         spec.input(
             'max_relax_iterations', 
             valid_type=orm.Int, 
@@ -257,24 +262,26 @@ class VaspMultiStageWorkChain(WorkChain):
             valid_type=orm.Str,
             default=lambda: orm.Str('VASP'),
             help='Select which potcar set should be used to construct mappin. VASP or MPRelaxSet')
-        # spec.input(
-        #     'default_magmom',
-        #     valid_type=orm.Dict,
-        #     required=False,
-        #     help='Initial values for MAGMOM tag'
-        # )
+        # At some point, I will probably change the parser too.
+        # I am still not convinved fully on using aiida-vasp parser.
+        spec.input('vasp_base.vasp.metadata.options.parser_name',
+                   valid_type=str,
+                   default='vasp.vasp',
+                   non_db=True,
+                   help='Parser of the calculation: the default is cp2k_advanced_parser to get the necessary info')
         
-        # spec.exit_code(0, 'NO_ERROR', message='the sun is shining')
+        spec.exit_code(0, 'NO_ERROR', message='the sun is shining')
         # spec.exit_code(300,
         #                'ERROR_MISSING_REQUIRED_OUTPUT',
         #                message='the called workchain does not contain the necessary relaxed output structure')
-        # spec.exit_code(420, 'ERROR_NO_CALLED_WORKCHAIN', message='no called workchain detected')
+        spec.exit_code(420, 'ERROR_NO_CALLED_WORKCHAIN', message='no called workchain detected')
         # spec.exit_code(500, 'ERROR_UNKNOWN', message='unknown error detected in the relax workchain')
         # spec.exit_code(502, 'ERROR_OVERRIDE_PARAMETERS', message='there was an error overriding the parameters')
         spec.outline(
             cls.initialize,
             if_(cls.should_run_initial_static)(
                 cls.run_static,
+                cls.verify_static,
                 cls.inspect_static,
             ),
             while_(cls.should_run_relax)(
@@ -299,8 +306,8 @@ class VaspMultiStageWorkChain(WorkChain):
         self.ctx.current_structure = self.inputs.structure
         self.ctx.is_scf_converged = False
         self.ctx.is_strc_converged = False
-        self.ctx.inputs = AttributeDict()
-        self.ctx.inputs.potential_mapping = get_potcar_mapping(self.ctx.current_structure, self.inputs.potcar_set)
+        self.ctx.vasp_base = AttributeDict(self.exposed_inputs(VaspBaseWorkChain, 'vasp_base'))
+        self.inputs.potential_mapping = get_potcar_mapping(self.ctx.current_structure, self.inputs.potcar_set)
         
         self.ctx.all_outputs = {}
 
@@ -308,7 +315,7 @@ class VaspMultiStageWorkChain(WorkChain):
     
         try:
             self._verbose = self.inputs.verbose.value
-            self.ctx.inputs.verbose = self.inputs.verbose
+            # self.ctx.inputs.verbose = self.inputs.verbose
         except AttributeError:
             pass
 
@@ -338,7 +345,8 @@ class VaspMultiStageWorkChain(WorkChain):
                 settings.parser_settings.update(dict_entry)
             except AttributeError:
                 settings.parser_settings = dict_entry
-        self.ctx.inputs.settings = settings
+        # self.ctx.inputs.settings = settings
+        self.inputs.settings = settings
         
     def should_run_initial_static(self):
         """
@@ -364,47 +372,70 @@ class VaspMultiStageWorkChain(WorkChain):
         Prepares and submits static calculations as long as
         they are needed.
         """
-        self.ctx.inputs.settings.parser_settings.add_structure = False
-        self.ctx.inputs.structure = self.ctx.current_structure
+        self.inputs.settings.parser_settings.add_structure = False
         
+        self.ctx.vasp_base.vasp.structure = self.ctx.current_structure
+        self.ctx.vasp_base.vasp.potential = PotcarData.get_potcars_from_structure(
+                structure=self.inputs.structure,
+                family_name=self.inputs.potential_family.value,
+                mapping=self.inputs.potential_mapping.get_dict())
         if not self.ctx.is_strc_converged:
-            self.ctx.inputs.parameters = get_stage_incar(self.ctx.parameters, orm.Str('incar_static_initial'))
+            self.ctx.vasp_base.vasp.parameters = get_stage_incar(self.ctx.parameters, orm.Str('incar_static_initial'))
         else:
-            self.ctx.inputs.parameters = get_stage_incar(self.ctx.parameters, orm.Str('incar_static_final'))
+            self.ctx.vasp_base.vasp.parameters = get_stage_incar(self.ctx.parameters, orm.Str('incar_static_final'))
             # self.ctx.inputs.settings.ADDITIONAL_RETRIEVE_LIST = ['INCAR']
         
-        if self.ctx.inputs.parameters['ISPIN'] == 2:
-            self.ctx.inputs.settings.parser_settings.add_site_magnetization = True
-        self.ctx.inputs.update(self.exposed_inputs(VaspBaseWorkChain, 'base'))
+        if self.ctx.vasp_base.vasp.parameters['ISPIN'] == 2:
+            self.inputs.settings.parser_settings.add_site_magnetization = True
+        self.ctx.vasp_base.vasp.settings = self.inputs.settings
         
         if self.ctx.is_strc_converged:
-            self.ctx.inputs.restart_folder = self.ctx.workchain_relax[-1].outputs.remote_folder
-            self.ctx.inputs['metadata'].update({
+            self.ctx.vasp_base.vasp.restart_folder = self.ctx.workchain_relax[-1].outputs.remote_folder
+            self.ctx.vasp_base.vasp['metadata'].update({
             'label': 'final_static',
             'call_link_label': 'final_static',
             })
         else:
-            self.ctx.inputs['metadata'].update({
+            self.ctx.vasp_base['vasp']['metadata'].update({
             'label': 'initial_static',
             'call_link_label': 'initial_static',
             })
         
-        inputs = prepare_process_inputs(VaspBaseWorkChain, self.ctx.inputs)
-        
+        inputs = prepare_process_inputs(VaspBaseWorkChain, self.ctx.vasp_base)
         running = self.submit(VaspBaseWorkChain, **inputs)
         self.report(f"Submitted Static VaspBaseWorkchain <pk>:{running.pk}")
         return ToContext(workchain_static=(append_(running)))
 
     
-    def inspect_static(self):
+    def verify_static(self):
         """
         Inspects if static workchain finished ok 
         and also should check the scf convergence.
         """
+        
+        try:
+            workchain = self.ctx.workchain_static[-1]
+        except IndexError:
+            self.report('There is no {} in the called workchain list.'.format(self.ctx.workchain_static[-1].process_label))
+            return self.exit_codes.ERROR_NO_CALLED_WORKCHAIN  # pylint: disable=no-member
+
+        exit_status = workchain.exit_status
+        exit_message = workchain.exit_message
+        if not exit_status:
+            self.report("Yei all good!")
+            self.ctx.exit_code = self.exit_codes.NO_ERROR  # pylint: disable=no-member
+        else:
+            self.ctx.exit_code = ExitCode(exit_status, exit_message)
+            self.report('The called {}<{}> returned a non-zero exit status. '
+                        'The exit status {} is inherited'.format(workchain.__class__.__name__, workchain.pk, self.ctx.exit_code))
+        return self.ctx.exit_code
+    
+    def inspect_static(self):
 
         workchain = self.ctx.workchain_static[-1]
         if not workchain.is_finished_ok:
             self.report("The initial static calculation did not finish properly")
+            
         else:
             with workchain.outputs.retrieved.open('vasprun.xml') as xml:
                 vasp_run = Vasprun(xml.name)
@@ -412,10 +443,10 @@ class VaspMultiStageWorkChain(WorkChain):
             if self.ctx.is_scf_converged:
                 self.report('SCF converged')
                 if self.ctx.is_strc_converged and self.ctx.final_static:
-                    self.out('final_incar.final_static', workchain.inputs.parameters)
+                    self.out('final_incar.final_static', workchain.inputs.vasp__parameters)
                     self.ctx.all_outputs['final_static'] = workchain.outputs.misc
                 else:
-                    self.out('final_incar.initial_static', workchain.inputs.parameters)
+                    self.out('final_incar.initial_static', workchain.inputs.vasp__parameters)
                     self.ctx.all_outputs['initial_static'] = workchain.outputs.misc
             else:
                 self.ctx.is_scf_converged = False
@@ -425,33 +456,40 @@ class VaspMultiStageWorkChain(WorkChain):
         Prepares and submit calculation to relax structure.
         """
 
-        self.ctx.inputs.settings.parser_settings.add_structure = True
-        self.ctx.inputs.structure = self.ctx.current_structure
+        self.inputs.settings.parser_settings.add_structure = True
+        self.inputs.structure = self.ctx.current_structure
 
-        self.ctx.inputs.parameters = get_stage_incar(self.ctx.parameters, orm.Str('incar_relax'))
+        self.ctx.vasp_base.vasp.parameters = get_stage_incar(self.ctx.parameters, orm.Str('incar_relax'))
         # if self.ctx.iteration == 0:
         #     self.ctx.inputs.parameters = get_stage_incar(self.ctx.parameters, orm.Str('incar_relax'))
         # else:
         #     # Context is already for relax. We just wanna increase NSW.
         #     self.ctx.inputs.parameters = increase_nsw(self.ctx.inputs.parameters)
 
-        if self.ctx.inputs.parameters['ISPIN'] == 2:
-            self.ctx.inputs.settings.parser_settings.add_site_magnetization = True
-        
-        self.ctx.inputs.update(self.exposed_inputs(VaspBaseWorkChain, 'base'))
-        
+        if self.ctx.vasp_base.vasp.parameters['ISPIN'] == 2:
+            self.inputs.settings.parser_settings.add_site_magnetization = True
+                
         # Setting up remote folder for restart
+        # if self.ctx.iteration == 0:
+        #     self.ctx.inputs.restart_folder = self.ctx.workchain_static[-1].outputs.remote_folder
+        # else:
+        #     self.ctx.inputs.restart_folder = self.ctx.workchain_relax[-1].outputs.remote_folder
         if self.ctx.iteration == 0:
-            self.ctx.inputs.restart_folder = self.ctx.workchain_static[-1].outputs.remote_folder
+            self.ctx.vasp_base.vasp.restart_folder = self.ctx.workchain_static[-1].outputs.remote_folder
         else:
-            self.ctx.inputs.restart_folder = self.ctx.workchain_relax[-1].outputs.remote_folder
+            self.ctx.vasp_base.vasp.restart_folder = self.ctx.workchain_relax[-1].outputs.remote_folder
         
-        self.ctx.inputs['metadata'].update({
+        # self.ctx.inputs['metadata'].update({
+        #     'label': f'relax_iteration_{self.ctx.iteration}',
+        #     'call_link_label': f'relax_iteration_{self.ctx.iteration}',
+        #     })
+        
+        self.ctx.vasp_base['vasp']['metadata'].update({
             'label': f'relax_iteration_{self.ctx.iteration}',
             'call_link_label': f'relax_iteration_{self.ctx.iteration}',
             })
 
-        inputs = prepare_process_inputs(VaspBaseWorkChain, self.ctx.inputs)
+        inputs = prepare_process_inputs(VaspBaseWorkChain, self.ctx.vasp_base)
         
         running = self.submit(VaspBaseWorkChain, **inputs)
         self.report(f"Submitted Relax VaspBaseWorkchain <pk>:{running.pk}_Iteration_{self.ctx.iteration}")
@@ -474,7 +512,7 @@ class VaspMultiStageWorkChain(WorkChain):
             if self.ctx.is_strc_converged:
                 self.report(f'Fully converged in relax')
                 self.ctx.relax = False
-                self.out('final_incar.relax', workchain.inputs.parameters)
+                self.out('final_incar.relax', workchain.inputs.vasp__parameters)
                 self.ctx.all_outputs['relax_misc'] = workchain.outputs.misc
                 self.ctx.all_outputs['relax_mag'] = workchain.outputs.site_magnetization
                 self.ctx.current_structure = workchain.outputs.structure
@@ -488,8 +526,6 @@ class VaspMultiStageWorkChain(WorkChain):
         if self.ctx.is_strc_converged:
             self.out('relax.structure', self.ctx.current_structure)
         self.report('VaspMultiStageWorkChain finished successfull!')
-        # self.report(f'Output Dict <{self.outputs['output_parameters'].pk}>')
-        # self.out_many(self.exposed_outputs(workchain, VaspBaseWorkChain))
 
         self.report('Output Dict <{}>'.format(self.outputs['output_parameters'].pk))
     
