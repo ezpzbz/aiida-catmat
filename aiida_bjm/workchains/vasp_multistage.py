@@ -20,7 +20,7 @@ from aiida.plugins import DataFactory, WorkflowFactory
 from aiida.engine.processes.exit_code import ExitCode
 
 from aiida_bjm.calcfunctions import dict_merge
-from aiida_bjm.utils import prepare_process_inputs
+from aiida_bjm.utils import prepare_process_inputs, get_stdout_errs
 # from aiida_vasp.utils.aiida_utils import get_data_class
 from pymatgen.io.vasp import sets as VaspInputSets
 from pymatgen.io.vasp import Vasprun
@@ -266,7 +266,7 @@ class VaspMultiStageWorkChain(WorkChain):
         # I am still not convinved fully on using aiida-vasp parser.
         spec.input('vasp_base.vasp.metadata.options.parser_name',
                    valid_type=str,
-                   default='vasp.vasp',
+                   default='vasp_base_parser',
                    non_db=True,
                    help='Parser of the calculation: the default is cp2k_advanced_parser to get the necessary info')
         
@@ -281,7 +281,7 @@ class VaspMultiStageWorkChain(WorkChain):
             cls.initialize,
             if_(cls.should_run_initial_static)(
                 cls.run_static,
-                cls.verify_static,
+                # cls.verify_static,
                 cls.inspect_static,
             ),
             while_(cls.should_run_relax)(
@@ -298,6 +298,7 @@ class VaspMultiStageWorkChain(WorkChain):
         # spec.expose_outputs(VaspBaseWorkChain)
         spec.output('relax.structure', valid_type=orm.StructureData, required=False)
         spec.output('output_parameters', valid_type=orm.Dict, required=True)
+        spec.output('errors_warnings', valid_type=orm.Dict, required=False)
         spec.output_namespace('final_incar', valid_type=orm.Dict, required=False, dynamic=True)
         
 
@@ -383,7 +384,6 @@ class VaspMultiStageWorkChain(WorkChain):
             self.ctx.vasp_base.vasp.parameters = get_stage_incar(self.ctx.parameters, orm.Str('incar_static_initial'))
         else:
             self.ctx.vasp_base.vasp.parameters = get_stage_incar(self.ctx.parameters, orm.Str('incar_static_final'))
-            # self.ctx.inputs.settings.ADDITIONAL_RETRIEVE_LIST = ['INCAR']
         
         if self.ctx.vasp_base.vasp.parameters['ISPIN'] == 2:
             self.inputs.settings.parser_settings.add_site_magnetization = True
@@ -419,16 +419,25 @@ class VaspMultiStageWorkChain(WorkChain):
             self.report('There is no {} in the called workchain list.'.format(self.ctx.workchain_static[-1].process_label))
             return self.exit_codes.ERROR_NO_CALLED_WORKCHAIN  # pylint: disable=no-member
 
-        exit_status = workchain.exit_status
-        exit_message = workchain.exit_message
-        if not exit_status:
-            self.report("Yei all good!")
-            self.ctx.exit_code = self.exit_codes.NO_ERROR  # pylint: disable=no-member
-        else:
-            self.ctx.exit_code = ExitCode(exit_status, exit_message)
-            self.report('The called {}<{}> returned a non-zero exit status. '
-                        'The exit status {} is inherited'.format(workchain.__class__.__name__, workchain.pk, self.ctx.exit_code))
-        return self.ctx.exit_code
+        # self.ctx.stdout_errors = get_stdout_errs(workchain)
+        
+        # if len(self.ctx.stdout_errors[0]) == 0:
+        #     self.report("No erros/warning has been found!")
+        #     self.out('errors_warnings', orm.Dict(dict={'errors': self.ctx.stdout_errors}))
+        #     # self.exit_codes.NO_ERROR
+        # else:
+        #     self.out('errors_warnings', orm.Dict(dict={'errors': self.ctx.stdout_errors}))
+            # return self.ctx.stdout_errors
+        # exit_status = workchain.exit_status
+        # exit_message = workchain.exit_message
+        # if not exit_status:
+        #     self.report("Yei all good!")
+        #     self.ctx.exit_code = self.exit_codes.NO_ERROR  # pylint: disable=no-member
+        # else:
+        #     self.ctx.exit_code = ExitCode(exit_status, exit_message)
+        #     self.report('The called {}<{}> returned a non-zero exit status. '
+        #                 'The exit status {} is inherited'.format(workchain.__class__.__name__, workchain.pk, self.ctx.exit_code))
+        # return self.ctx.exit_code
     
     def inspect_static(self):
 
@@ -456,7 +465,7 @@ class VaspMultiStageWorkChain(WorkChain):
         Prepares and submit calculation to relax structure.
         """
 
-        self.inputs.settings.parser_settings.add_structure = True
+        self.inputs.settings.parser_settings.add_structure = False
         self.inputs.structure = self.ctx.current_structure
 
         self.ctx.vasp_base.vasp.parameters = get_stage_incar(self.ctx.parameters, orm.Str('incar_relax'))

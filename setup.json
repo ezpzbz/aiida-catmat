@@ -16,6 +16,9 @@
         "aiida-core>=1.1.0,<2.0.0"
     ],
     "entry_points": {
+        "aiida.parsers": [
+            "vasp_base_parser = aiida_bjm.parsers:VaspBaseParser"
+        ],
         "aiida.workflows": [
             "vasp.base = aiida_bjm.workchains:VaspBaseWorkChain",
             "bjm.eos = aiida_bjm.workchains:EosWorkChain",
