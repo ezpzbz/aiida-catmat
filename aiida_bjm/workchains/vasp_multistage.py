@@ -337,8 +337,10 @@ class VaspMultiStageWorkChain(WorkChain):
         if 'settings' in self.inputs:
             settings = AttributeDict(self.inputs.settings.get_dict())
         else:
-            settings = AttributeDict({'parser_settings': {}})
-            settings = AttributeDict({'parser_settings': {}, 'ADDITIONAL_RETRIEVE_LIST':['INCAR']})
+            settings = AttributeDict({'ADDITIONAL_RETRIEVE_LIST':['INCAR']})
+            self.inputs.settings = settings
+            # settings = AttributeDict({'parser_settings': {}})
+            # settings = AttributeDict({'parser_settings': {}, 'ADDITIONAL_RETRIEVE_LIST':['INCAR']})
         
         if self.ctx.relax:
             dict_entry = {'add_structure': True}
@@ -347,7 +349,7 @@ class VaspMultiStageWorkChain(WorkChain):
             except AttributeError:
                 settings.parser_settings = dict_entry
         # self.ctx.inputs.settings = settings
-        self.inputs.settings = settings
+        # self.inputs.settings = settings
         
     def should_run_initial_static(self):
         """
@@ -373,7 +375,7 @@ class VaspMultiStageWorkChain(WorkChain):
         Prepares and submits static calculations as long as
         they are needed.
         """
-        self.inputs.settings.parser_settings.add_structure = False
+        # self.inputs.settings.parser_settings.add_structure = False
         
         self.ctx.vasp_base.vasp.structure = self.ctx.current_structure
         self.ctx.vasp_base.vasp.potential = PotcarData.get_potcars_from_structure(
@@ -385,8 +387,8 @@ class VaspMultiStageWorkChain(WorkChain):
         else:
             self.ctx.vasp_base.vasp.parameters = get_stage_incar(self.ctx.parameters, orm.Str('incar_static_final'))
         
-        if self.ctx.vasp_base.vasp.parameters['ISPIN'] == 2:
-            self.inputs.settings.parser_settings.add_site_magnetization = True
+        # if self.ctx.vasp_base.vasp.parameters['ISPIN'] == 2:
+        #     self.inputs.settings.parser_settings.add_site_magnetization = True
         self.ctx.vasp_base.vasp.settings = self.inputs.settings
         
         if self.ctx.is_strc_converged:
@@ -465,7 +467,7 @@ class VaspMultiStageWorkChain(WorkChain):
         Prepares and submit calculation to relax structure.
         """
 
-        self.inputs.settings.parser_settings.add_structure = False
+        # self.inputs.settings.parser_settings.add_structure = False
         self.inputs.structure = self.ctx.current_structure
 
         self.ctx.vasp_base.vasp.parameters = get_stage_incar(self.ctx.parameters, orm.Str('incar_relax'))
@@ -475,8 +477,8 @@ class VaspMultiStageWorkChain(WorkChain):
         #     # Context is already for relax. We just wanna increase NSW.
         #     self.ctx.inputs.parameters = increase_nsw(self.ctx.inputs.parameters)
 
-        if self.ctx.vasp_base.vasp.parameters['ISPIN'] == 2:
-            self.inputs.settings.parser_settings.add_site_magnetization = True
+        # if self.ctx.vasp_base.vasp.parameters['ISPIN'] == 2:
+        #     self.inputs.settings.parser_settings.add_site_magnetization = True
                 
         # Setting up remote folder for restart
         # if self.ctx.iteration == 0:
@@ -523,7 +525,7 @@ class VaspMultiStageWorkChain(WorkChain):
                 self.ctx.relax = False
                 self.out('final_incar.relax', workchain.inputs.vasp__parameters)
                 self.ctx.all_outputs['relax_misc'] = workchain.outputs.misc
-                self.ctx.all_outputs['relax_mag'] = workchain.outputs.site_magnetization
+                # self.ctx.all_outputs['relax_mag'] = workchain.outputs.site_magnetization
                 self.ctx.current_structure = workchain.outputs.structure
             else:
                 self.report("Structure is not converged!")

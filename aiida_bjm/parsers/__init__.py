@@ -69,22 +69,38 @@ class VaspBaseParser(Parser):
             return self.exit_codes.ERROR_NO_RETRIEVED_FOLDER
 
         ALWAYS_RETRIEVE_LIST = [ #pylint: disable=invalid-name
-
             'CONTCAR', 'OUTCAR', 'vasprun.xml', 'EIGENVAL', 'DOSCAR', '_scheduler-stdout.txt', '_scheduler-stderr.txt'
         ]
 
         if 'ADDITIONAL_RETRIEVE_LIST' in self.node.inputs.settings.get_dict():
             ALWAYS_RETRIEVE_LIST.append(self.node.inputs.settings.get_dict()['ADDITIONAL_RETRIEVE_LIST'])
         
-        for item in ALWAYS_RETRIEVE_LIST:
-            if item not in self.retrieved.list_object_names():
-                return self.exit_codes.ERROR_CRITICAL_MISSING_FILE
+        # for item in ALWAYS_RETRIEVE_LIST:
+        #     if item not in self.retrieved.list_object_names():
+        #         return self.exit_codes.ERROR_CRITICAL_MISSING_FILE
+        try:
+            with self.retrieved.open('vasprun.xml') as handler:
+                vrun = Vasprun(handler.name)
+            with self.retrieved.open('OUTCAR') as handler:
+                vout = Outcar(handler.name)
+        except AttributeError:
+            vrun = None
+            vout = None
+
         
         errors = self._parse_stdout()
-        results = self._parse_vasprun
-
-        self.out('errors', Dict(dict=errors))
-        self.out('output_parameters', Dict(dict=results))
+        # if errors is None:
+        #     results = self._parse_vasprun
+        #     self.out('output_parameters', Dict(dict=results))
+        results, structure = self._parse_results(
+            vrun=vrun,
+            vout=vout,
+            errors=errors)
+        self.out('misc', Dict(dict=results))
+        if structure is not None:
+            self.out('structure', StructureData(pymatgen_structure=structure))
+        # self.out('errors', Dict(dict=errors))
+        # self.out('output_parameters', Dict(dict=results))
         # self.out('relaxed.structure', StructureData(pymatgen_structure=structure))
 
     def _parse_stdout(self):
@@ -116,15 +132,25 @@ class VaspBaseParser(Parser):
         
         return errors
     
-    def _parse_vasprun(self):
+    @staticmethod
+    def _parse_results(vrun, vout, errors):
         results = {}
-        with self.retrieved.open('vasprun.xml') as handler:
-            vasprun = Vasprun(handler.name)
-        results['converged'] = vasprun.converged
-        results['converged_ionically'] = vasprun.converged_ionic
-        results['converged_electronically'] = vasprun.converged_electronic
-        results['total_energy'] = vasprun.final_energy
+        if vrun:
+            # with self.retrieved.open('vasprun.xml') as handler:
+            #     vasprun = Vasprun(handler.name)
+            results['converged'] = vrun.converged
+            results['converged_ionically'] = vrun.converged_ionic
+            results['converged_electronically'] = vrun.converged_electronic
+            results['total_energies'] = {}
+            results['total_energies']['energy_no_entropy'] = vrun.final_energy
+            results['errors'] = errors
+            results['magnetization'] = vout.magnetization
+            results['total_magnetization'] = vout.total_mag
+            if vrun.incar['NSW'] != 0:
+                structure = vrun.final_structure
+            else:
+                structure = None
+        else:
+            results['errors'] = errors
 
-        # structure = vasprun.final_structure
-
-        return results
+        return results, structure
