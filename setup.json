@@ -9,17 +9,19 @@
         "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7"
     ],
-    "version": "0.1.0",
+    "version": "0.2.0",
     "setup_requires": ["reentry"],
     "reentry_register": true,
     "install_requires": [
+        "aiida-vasp>1.0.0",
         "aiida-core>=1.1.0,<2.0.0"
     ],
     "entry_points": {
+        "aiida.parsers": [
+            "vasp_base_parser = aiida_bjm.parsers:VaspBaseParser"
+        ],
         "aiida.workflows": [
             "vasp.base = aiida_bjm.workchains:VaspBaseWorkChain",
-            "bjm.eos = aiida_bjm.workchains:EosWorkChain",
-            "bjm.ocv = aiida_bjm.workchains:VaspOcvWorkChain",
             "bjm.vasp_multistage = aiida_bjm.workchains:VaspMultiStageWorkChain"
         ]
     },

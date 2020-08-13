@@ -30,7 +30,8 @@ def example_multistage_workchain_li(vasp_code):
         'ISMEAR': 0,
         'PREC': 'Normal',
         'ICHARG': 0,
-        'NSW': 50,
+        'ISPIN': 2,
+        'ENCUT': 500,
         'LDAU': False,
     }
 
@@ -43,23 +44,23 @@ def example_multistage_workchain_li(vasp_code):
     builder.vasp_base.vasp.code = vasp_code
     builder.structure = StructureData(ase=read(strc_path))
     builder.parameters = orm.Dict(dict=incar)
-
+    builder.protocol_tag = orm.Str('S0R3S')
     builder.potential_family = orm.Str(potential_family)
     
     builder.vasp_base.vasp.kpoints = kpoints
 
     builder.vasp_base.vasp.metadata.options.resources = {
         'num_machines': 1, 
-        'num_cores_per_machine': 2,
-        'num_mpiprocs_per_machine': 2,
+        'num_cores_per_machine': 1,
+        'num_mpiprocs_per_machine': 1,
     }
-    builder.vasp_base.vasp.metadata.options.max_wallclock_seconds  = 1 * 30 * 60
-    builder.vasp_base.vasp.metadata.options.withmpi = True
-    builder.vasp_base.vasp.metadata.options.mpirun_extra_params = ["timeout", "5"]
+    # builder.vasp_base.vasp.metadata.options.max_wallclock_seconds  = 1 * 30 * 60
+    # builder.vasp_base.vasp.metadata.options.withmpi = True
+    # builder.vasp_base.vasp.metadata.options.mpirun_extra_params = ["timeout", "5"]
 
     builder.metadata.label = 'BCC_Li_111'
     builder.metadata.description = 'VaspMultiStageWorkChain'
-    run(builder)
+    submit(builder)
     print('submitted VaspRelaxWorkChain!')
 
 @click.command('cli')
