@@ -10,6 +10,7 @@ from aiida.orm import Dict
 from aiida.plugins import DataFactory
 
 from pymatgen.io.vasp import Vasprun, Outcar, Oszicar, Poscar
+from pymatgen.electronic_structure.core import Spin
 
 StructureData = DataFactory('structure')  # pylint: disable=invalid-name
 STDOUT_ERRS = {
@@ -58,6 +59,7 @@ STDERR_ERRS = {
     'walltime': ['PBS: job killed: walltime'],
     'memory': ['job killed: memory']
 }
+
 class VaspBaseParser(Parser):
     """Basic Parser for VaspCalculation"""
     def parse(self, **kwargs):
@@ -68,16 +70,6 @@ class VaspBaseParser(Parser):
         except exceptions.NotExistent:
             return self.exit_codes.ERROR_NO_RETRIEVED_FOLDER
 
-        ALWAYS_RETRIEVE_LIST = [ #pylint: disable=invalid-name
-            'CONTCAR', 'OUTCAR', 'vasprun.xml', 'EIGENVAL', 'DOSCAR', '_scheduler-stdout.txt', '_scheduler-stderr.txt'
-        ]
-
-        if 'ADDITIONAL_RETRIEVE_LIST' in self.node.inputs.settings.get_dict():
-            ALWAYS_RETRIEVE_LIST.append(self.node.inputs.settings.get_dict()['ADDITIONAL_RETRIEVE_LIST'])
-        
-        # for item in ALWAYS_RETRIEVE_LIST:
-        #     if item not in self.retrieved.list_object_names():
-        #         return self.exit_codes.ERROR_CRITICAL_MISSING_FILE
         try:
             with self.retrieved.open('vasprun.xml') as handler:
                 vrun = Vasprun(handler.name)
@@ -87,30 +79,22 @@ class VaspBaseParser(Parser):
             vrun = None
             vout = None
 
-        
         errors = self._parse_stdout()
-        # if errors is None:
-        #     results = self._parse_vasprun
-        #     self.out('output_parameters', Dict(dict=results))
-        results, structure = self._parse_results(
-            vrun=vrun,
-            vout=vout,
-            errors=errors)
+        
+        results, structure = self._parse_results(vrun=vrun, vout=vout, errors=errors)
+
         self.out('misc', Dict(dict=results))
+        
         if structure is not None:
             self.out('structure', StructureData(pymatgen_structure=structure))
-        # self.out('errors', Dict(dict=errors))
-        # self.out('output_parameters', Dict(dict=results))
-        # self.out('relaxed.structure', StructureData(pymatgen_structure=structure))
 
     def _parse_stdout(self):
         """
         Parses the _scheduler-stdout.txt and reports any found errors.
         """
-        # errors = set()
         errors = {}
         errors_subset_to_catch = list(STDOUT_ERRS.keys())
-        # error_msgs = set()
+        
         with self.retrieved.open('_scheduler-stdout.txt') as handler:
             for line in handler:
                 l = line.strip()
@@ -119,8 +103,7 @@ class VaspBaseParser(Parser):
                         for msg in msgs:
                             if l.find(msg) != -1:
                                 errors[err] = msg
-                                # errors.add(err)
-                                # error_msgs.add(msg)
+        
         with self.retrieved.open('_scheduler-stderr.txt') as handler:
             for line in handler:
                 l = line.strip()
@@ -134,18 +117,35 @@ class VaspBaseParser(Parser):
     
     @staticmethod
     def _parse_results(vrun, vout, errors):
+        
+        def _site_magnetization(structure, magnetizations):
+            site_mags = []
+            symbols = [specie.symbol for specie in structure.species]
+            for symbol, magnetization in zip(symbols, magnetizations):
+                mag_dict = {}
+                mag_dict[symbol] = magnetization
+                site_mags.append(mag_dict)
+            return site_mags
+
         results = {}
         if vrun:
-            # with self.retrieved.open('vasprun.xml') as handler:
-            #     vasprun = Vasprun(handler.name)
+            
             results['converged'] = vrun.converged
             results['converged_ionically'] = vrun.converged_ionic
             results['converged_electronically'] = vrun.converged_electronic
             results['total_energies'] = {}
             results['total_energies']['energy_no_entropy'] = vrun.final_energy
+            results['band_gap'] = {}
+            if vrun.parameters['ISPIN'] == 2:
+                results['band_gap']['spin_up'] = vrun.complete_dos.get_gap(spin=Spin.up)
+                results['band_gap']['spin_down'] = vrun.complete_dos.get_gap(spin=Spin.down)
+            else:
+                results['band_gap']['spin_up'] = vrun.complete_dos.get_gap()
+                results['band_gap']['spin_down'] = vrun.complete_dos.get_gap()
             results['errors'] = errors
-            results['magnetization'] = vout.magnetization
             results['total_magnetization'] = vout.total_mag
+            if 'LORBIT' in vrun.incar:
+                results['site_magnetizations'] = _site_magnetization(vrun.final_structure, vout.magnetization)
             if vrun.incar['NSW'] != 0:
                 structure = vrun.final_structure
             else:
