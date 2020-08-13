@@ -4,10 +4,14 @@ from aiida.common import AttributeDict
 from aiida.engine import calcfunction
 from aiida.engine import BaseRestartWorkChain, ProcessHandlerReport, process_handler, while_
 from aiida.orm import Dict
-from aiida.plugins import CalculationFactory
+from aiida.plugins import CalculationFactory, DataFactory
 from aiida_bjm.calcfunctions import dict_merge
 from aiida_bjm.utils import get_stdout_errs, get_stderr_errs
 
+from pymatgen import Structure
+from pymatgen.io.vasp import Oszicar
+
+StructureData = DataFactory('structure')
 VaspCalculation = CalculationFactory('vasp.vasp')  # pylint: disable=invalid-name
 
 @calcfunction
@@ -21,6 +25,13 @@ def update_incar(incar, modifications):
     dict_merge(incar, modifications)
 
     return Dict(dict=incar)
+
+@calcfunction
+def apply_strain_on_structure(retrived_folder): 
+    with n.outputs.retrieved.open('CONTCAR') as handler:  
+        structure = Structure.from_file(handler.name) 
+    structure.apply_strain(0.2) 
+    return StructureData(pymatgen_structure=structure)
 
 class VaspBaseWorkChain(BaseRestartWorkChain):
     """Workchain to run a VASP calculation with automated error handling and restarts."""
@@ -61,7 +72,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
         self.report('{}<{}> failed with exit status {}: {}'.format(*arguments))
         self.report('Action taken: {}'.format(action))
     
-    @process_handler(priority=570, enabled=False)
+    @process_handler(priority=570, enabled=True)
     def handle_timeout(self, calculation):
         """Error handler that restarts calculation finished with TIMEOUT ExitCode."""
         self.ctx.stdout_errors = get_stdout_errs(calculation)
@@ -74,7 +85,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
     
     @process_handler(priority=100, enabled=False)
     def handle_tetrahedron(self, calculation):
-        """Handle '' exit code"""
+        """Handle 'ERROR_TETRAHEDRON' exit code"""
         if 'tet' in self.ctx.stdout_errors[0]:
             if 'KSPACING' in self.ctx.parameters.get_dict():
                 old_kspacing = self.ctx.parameters['KSPACING']
@@ -96,7 +107,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
             
                 return ProcessHandlerReport(False)
         
-    @process_handler(priority=110, enabled=False)
+    @process_handler(priority=110, enabled=True)
     def handle_inverse_rotation_matrix(self, calculation):
         """Handle 'ERROR_INVERSE_ROTATION_MATRIX' exit code"""
         if 'inv_rot_mat' in self.ctx.stdout_errors[0]:
@@ -108,7 +119,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
     
-    @process_handler(priority=120, enabled=False)
+    @process_handler(priority=120, enabled=True)
     def handle_subspace_matrix(self, calculation):
         """Handle 'ERROR_SUBSPACEMATRIX' exit code"""
         if 'subspacematrix' in self.ctx.stdout_errors[0]:
@@ -120,7 +131,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
 
-    @process_handler(priority=130, enabled=False)
+    @process_handler(priority=130, enabled=True)
     def handle_amin(self, calculation):
         """Handle 'ERROR_SUBSPACEMATRIX' exit code"""
         if 'amin' in self.ctx.stdout_errors[0]:
@@ -132,7 +143,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
     
-    @process_handler(priority=140, enabled=False)
+    @process_handler(priority=140, enabled=True)
     def handle_pricel(self, calculation):
         """Handle 'ERROR_PRICEL' exit code"""
         if 'pricel' in self.ctx.stdout_errors[0]:
@@ -145,7 +156,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
 
-    @process_handler(priority=150, enabled=False)
+    @process_handler(priority=150, enabled=True)
     def handle_brions(self, calculation):
         """Handle 'ERROR_BRIONS' exit code"""
         if 'brions' in self.ctx.stdout_errors[0]:
@@ -158,7 +169,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
     
-    @process_handler(priority=160, enabled=False)
+    @process_handler(priority=160, enabled=True)
     def handle_pssyevx(self, calculation):
         """Handle 'ERROR_PSSYEVX' exit code"""
         if 'pssyevx' in self.ctx.stdout_errors[0]:
@@ -170,7 +181,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
     
-    @process_handler(priority=170, enabled=False)
+    @process_handler(priority=170, enabled=True)
     def handle_eddrmm(self, calculation):
         """Handle 'ERROR_EDDRMM' exit code
         TODO: CHGCAR and WAVECAR have to be deleted or not copied.
@@ -188,10 +199,11 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
                 })
                 action = f'Set POTIM to <{potim}>'
             self.ctx.inputs.parameters = update_incar(self.ctx.parameters, modifications)
+            self.ctx.inputs.restart_folder = calculation.outputs.remote_folder
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
 
-    @process_handler(priority=180, enabled=False)
+    @process_handler(priority=180, enabled=True)
     def handle_edddav(self, calculation):
         """Handle 'ERROR_EDDDAV' exit code
         TODO: CHGCAR ahas to be deleted or not copied.
@@ -205,7 +217,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False) 
 
-    @process_handler(priority=190, enabled=False)
+    @process_handler(priority=190, enabled=True)
     def handle_grad_not_orth(self, calculation):
         """Handle 'ERROR_GRAD_NOT_ORTH' exit code"""
         if 'grad_not_orth' in self.ctx.stdout_errors[0]:
@@ -218,7 +230,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
 
-    @process_handler(priority=200, enabled=False)
+    @process_handler(priority=200, enabled=True)
     def handle_zheev(self, calculation):
         """Handle 'ERROR_ZHEEV' exit code"""
         if 'zheev' in self.ctx.stdout_errors[0]:
@@ -230,7 +242,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
 
-    @process_handler(priority=210, enabled=False)
+    @process_handler(priority=210, enabled=True)
     def handle_elf_kpar(self, calculation):
         """Handle 'ERROR_ELF_KPAR' exit code"""
         if 'elf_kpar' in self.ctx.stdout_errors[0]:
@@ -242,7 +254,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False) 
 
-    @process_handler(priority=220, enabled=False)
+    @process_handler(priority=220, enabled=True)
     def handle_rhosyg(self, calculation):
         """Handle 'ERROR_RHOSYG' exit code"""
         if 'rhosyg' in self.ctx.stdout_errors[0]:
@@ -255,7 +267,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
 
-    @process_handler(priority=230, enabled=False)
+    @process_handler(priority=230, enabled=True)
     def handle_posmap(self, calculation):
         """Handle 'ERROR_POSMAP' exit code"""
         if 'posmap' in self.ctx.stdout_errors[0]:
@@ -267,7 +279,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
     
-    @process_handler(priority=240, enabled=False)
+    @process_handler(priority=240, enabled=True)
     def handle_point_group(self, calculation):
         """Handle 'ERROR_POINT_GROUP' exit code"""
         if 'point_group' in self.ctx.stdout_errors[0]:
@@ -278,3 +290,34 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
             action = 'Set ISYM to Zero!'
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
+    
+    @process_handler(priority=250, enabled=True)
+    def handle_zpotrf(self, calculation):
+        """Handle 'ERROR_ZPOTRF' exit code"""
+        if 'zportf' in self.ctx.stdout_errors[0]:
+            try:
+                with calculation.outputs.retrieved.open('OSZICAR') as handler:
+                    oszcar = Oszicar(handler.name)
+                nsteps = len(oszcar.ionic_steps)
+            except Exception: #pylint: disable=broad-except
+                nsteps = 0
+            if nsteps >= 0:
+                potim = self.ctx.parameters.get_dict().get('POTIM', 0.5) / 2.0
+                modifications = Dict(dict={
+                'ISYM': 0,
+                'POTIM': potim
+                })
+                action = f'Set ISYM to Zero and POTIM to {potim}!'
+            elif self.ctx.parameters.get_dict().get('NSW', 0) == 0 or self.ctx.parameters.get_dict().get('ISIF', 0) in range(3):
+                modifications = Dict(dict={
+                'ISYM': 0
+                })
+                action = 'Set ISYM to Zero!'
+            else:
+                self.ctx.inputs = apply_strain_on_structure(calculation.outputs.retrieved)
+                action = 'Apply 0.2 strain on the strcuture from CONTCAR'
+
+            self.ctx.inputs.parameters = update_incar(self.ctx.parameters, modifications)    
+            self.report_error_handled(calculation, action)
+            return ProcessHandlerReport(False)
+

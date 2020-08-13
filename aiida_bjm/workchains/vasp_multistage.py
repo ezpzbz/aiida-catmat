@@ -15,15 +15,86 @@ import yaml
 
 from aiida import orm
 from aiida.common import AttributeDict
-from aiida.engine import calcfunction, WorkChain, ToContext, append_, while_, if_
+from aiida.engine import calcfunction, WorkChain, ToContext, append_, while_
 from aiida.plugins import DataFactory, WorkflowFactory
 
 from aiida_bjm.calcfunctions import dict_merge
 from aiida_bjm.utils import prepare_process_inputs
-from pymatgen.io.vasp import sets as VaspInputSets
 
 VaspBaseWorkChain = WorkflowFactory('vasp.base') #pylint: disable=invalid-name
 PotcarData = DataFactory('vasp.potcar') #pylint: disable=invalid-name
+
+def get_magmom(structure_pmg):
+    # Get default
+    default_magmoms = []
+    for specie in structure_pmg.species:
+        if specie.Z > 56:
+            default_magmoms.append(7)
+        elif specie.Z > 20:
+            default_magmoms.append(5)
+        else:
+            default_magmoms.append(0.6)
+
+    # Get from structure
+    strc_magmoms = []
+    for site in structure_pmg:
+        if hasattr(site.specie, 'spin'):
+            strc_magmoms.append(site.specie.spin)
+        else:
+            strc_magmoms.append(0)
+    # merge
+    magmom = []
+    for m1, m2 in zip(strc_magmoms, default_magmoms):
+        if m1 != 0:
+            magmom.append(m1 * m2)
+        else:
+            magmom.append(m2)
+    magmom_dict = {}
+    magmom_dict['MAGMOM'] = magmom
+    return magmom_dict
+
+# Get Hubbard parameters if DFT+U is requested
+def get_hubbard(structure, structure_pmg, hubbard_tag):
+    """Constructs LDAU part of INCAR"""
+    thisdir = os.path.dirname(os.path.abspath(__file__))
+    yaml_path = os.path.join(thisdir, '..', 'data', 'hubbard_sets.yaml')
+    with open(yaml_path, 'r') as file:
+        hubbard_sets = yaml.safe_load(file)
+    hubbard_params = hubbard_sets[hubbard_tag]
+    
+    if any(element.Z > 56 for element in structure_pmg.composition):
+        lmaxmix = 6
+    elif any(element.Z > 20 for element in structure_pmg.composition):
+        lmaxmix = 4
+
+    hubbard_dict = {
+        'LDAU': True,
+        'LDAUPRINT':1,
+        'LDAUTYPE':2,
+        'LMAXMIX': lmaxmix
+    }
+    
+    LDAUU = [] #pylint: disable=invalid-name
+    LDAUJ = [] #pylint: disable=invalid-name
+    LDAUL = [] #pylint: disable=invalid-name
+    
+    kinds = structure.get_kind_names()
+    for kind in kinds:
+        kind_no_digit = ''.join(i for i in kind if not i.isdigit()) 
+        if kind_no_digit in hubbard_params['LDAUU']:
+            LDAUU.append(hubbard_params['LDAUU'][kind_no_digit])
+            LDAUJ.append(hubbard_params['LDAUJ'][kind_no_digit])
+            LDAUL.append(hubbard_params['LDAUL'][kind_no_digit])
+        else: 
+            LDAUU.append(0)
+            LDAUJ.append(0)
+            LDAUL.append(-1)
+    hubbard_dict.update({
+        'LDAUU': LDAUU,
+        'LDAUJ': LDAUJ,
+        'LDAUL': LDAUL
+    })
+    return hubbard_dict
 
 @calcfunction
 def get_potcar_mapping(structure, potcar_set_tag):
@@ -48,14 +119,12 @@ def get_potcar_mapping(structure, potcar_set_tag):
     return orm.Dict(dict=mapping)
 
 @calcfunction
-def setup_protocols(protocol_tag, structure, user_incar_settings):
-    """Read stages from provided protocol file, and 
+def setup_protocols(protocol_tag, structure, user_incar_settings, hubbard_tag=None):
+    """Read stages from provided protocol file, and
     constructs initial INCARs from Materials Project
-    sets.
-    """
-    # Get pymathen structure object from AiiDA StructureData
+    sets."""
     structure_pmg = structure.get_pymatgen_structure(add_spin=True)
-
+    
     # Get user-defined stages and alternative settings from yaml file
     thisdir = os.path.dirname(os.path.abspath(__file__))
     protocol_path = os.path.join(thisdir, 'protocols', 'vasp', protocol_tag.value + '.yaml')
@@ -65,183 +134,44 @@ def setup_protocols(protocol_tag, structure, user_incar_settings):
     # User-defined INCAR settings passed to workchain.
     user_incar_settings = user_incar_settings.get_dict()
     
-    
-    def _get_magmom(structure_pmg):
-        # Get default
-        default_magmoms = []
-        for specie in structure_pmg.species:
-            if specie.Z > 56:
-                default_magmoms.append(7)
-            elif specie.Z > 20:
-                default_magmoms.append(5)
-            else:
-                default_magmoms.append(0.6)
-
-        # Get from structure
-        strc_magmoms = []
-        for site in structure_pmg:
-            if hasattr(site.specie, 'spin'):
-                strc_magmoms.append(site.specie.spin)
-            else:
-                strc_magmoms.append(0)
-        # merge
-        magmom = []
-        for m1, m2 in zip(strc_magmoms, default_magmoms):
-            if m1 != 0:
-                magmom.append(m1 * m2)
-            else:
-                magmom.append(m2)
-        return magmom
-
-    # Get Hubbard parameters if DFT+U is requested
-    def _set_ldau(structure, protocol):
-        """Constructs LDAU part of INCAR"""
-        if any(element.Z > 56 for element in structure_pmg.composition):
-            lmaxmix = 6
-        elif any(element.Z > 20 for element in structure_pmg.composition):
-            lmaxmix = 4
-
-        hubbard_dict = {
-            'LDAU': True,
-            'LDAUPRINT':1,
-            'LDAUTYPE':2,
-            'LMAXMIX': lmaxmix
-        }
-        hubbard_params = protocol['hubbard']
-        LDAUU = [] #pylint: disable=invalid-name
-        LDAUJ = [] #pylint: disable=invalid-name
-        LDAUL = [] #pylint: disable=invalid-name
-       
-        kinds = structure.get_kind_names()
-        for kind in kinds:
-            kind_no_digit = ''.join(i for i in kind if not i.isdigit()) 
-            if kind_no_digit in hubbard_params['LDAUU']:
-                LDAUU.append(hubbard_params['LDAUU'][kind_no_digit])
-                LDAUJ.append(hubbard_params['LDAUJ'][kind_no_digit])
-                LDAUL.append(hubbard_params['LDAUL'][kind_no_digit])
-            else: 
-                LDAUU.append(0)
-                LDAUJ.append(0)
-                LDAUL.append(-1)
-        hubbard_dict.update({
-            'LDAUU': LDAUU,
-            'LDAUJ': LDAUJ,
-            'LDAUL': LDAUL
-        })
-        protocol['ldau_section'] = hubbard_dict
-        return protocol
-
     if user_incar_settings['LDAU']:
-        protocol = _set_ldau(structure, protocol)
-    # Get Input parameters for each stage.
-    if protocol['stages']['initial_static'] or protocol['stages']['final_static']:
-        input_set = getattr(VaspInputSets, 'MPStaticSet')
-        inputs = input_set(structure_pmg, user_incar_settings=user_incar_settings)
-        magmom = _get_magmom(structure_pmg)
-        if protocol['stages']['initial_static']:
-            incar = inputs.incar
-            incar.update({
-                'LAECHG': False,
-                'LCHARG': False,
-                'LVHAR': False,
-                'LWAVE': True,
-                'EDIFF': 1e-4,
-                'MAGMOM': magmom
-            })
-            protocol['incar_static_initial'] = {}
-            if user_incar_settings['LDAU']:
-                dict_merge(incar, protocol['ldau_section'])
-                protocol['incar_static_initial'] = incar
-            else:
-                protocol['incar_static_initial'] = incar
-        if protocol['stages']['initial_static']:
-            incar = inputs.incar
-            incar.update({
-                'LAECHG': True,
-                'LCHARG': True,
-                'LVHAR': True,
-                'LWAVE': True,
-                'EDIFF': 1e-7,
-                'MAGMOM': magmom
-            })
-            protocol['incar_static_final'] = {}
-            if user_incar_settings['LDAU']:
-                dict_merge(incar, protocol['ldau_section'])
-                protocol['incar_static_final'] = incar
-            else:
-                protocol['incar_static_final'] = incar
-    if protocol['stages']['relax']:
-        input_set = getattr(VaspInputSets, 'MPRelaxSet')
-        inputs = input_set(structure_pmg, user_incar_settings=user_incar_settings)
-        incar = inputs.incar
-        magmom = _get_magmom(structure_pmg)
-        incar.update({
-            'LWAVE': True,
-            'EDIFF': 1e-6,
-            'MAGMOM': magmom
-        })
-        protocol['incar_relax'] = {}
-        if user_incar_settings['LDAU']:
-            dict_merge(incar, protocol['ldau_section'])
-            protocol['incar_relax'] = incar
-        else:
-            protocol['incar_relax'] = incar
-    if protocol['stages']['nscf']:
-        protocol['incar_nscf'] = {}
-        input_set = getattr(VaspInputSets, 'MPNonSCFSet')
-        inputs = input_set(structure_pmg, user_incar_settings=user_incar_settings)
-        protocol['incar_nscf'] = inputs.incar
-                
+        hubbard = get_hubbard(structure, structure_pmg, hubbard_tag.value)
+        for key in protocol.keys():
+            dict_merge(protocol[key], hubbard)
+    
+    magmom = get_magmom(structure_pmg)
+    
+    # Update MAGMOM and LDAU section in all stages!
+    for key in protocol.keys():
+        dict_merge(protocol[key], magmom)
+        dict_merge(protocol[key], user_incar_settings)
+
     return orm.Dict(dict=protocol)
 
 @calcfunction
-def get_stage_incar(protocol, stage):
-    d = protocol[stage.value]
-    if stage.value == 'incar_relax' or stage.value == 'incar_static_final':
-        d.update({
-            'ISTART':1
-        })
-    return orm.Dict(dict=d)
-
-@calcfunction
-def increase_nsw(params):
-    p = params.get_dict()
-    p.update({
-        'NSW':300
-    })
-    return orm.Dict(dict=p)
+def get_stage_incar(parameters, stage_tag):
+    incar_params = parameters[stage_tag.value]
+    return orm.Dict(dict=incar_params)
 
 @calcfunction
 def extract_wrap_results(**all_outputs):
     results_dict = {
         'energy_unit': 'eV'
     }
-    if 'initial_static' in all_outputs.keys():
-        energy = all_outputs['initial_static']['total_energies']['energy_no_entropy']
-        results_dict['total_energy_initial_static'] = energy
-    if 'relax_misc' in all_outputs.keys():
-        energy = all_outputs['relax_misc']['total_energies']['energy_no_entropy']
-        results_dict['total_energy_relax'] = energy
-    if 'relax_mag' in all_outputs.keys():
-        magmoms = []
-        site_moms = all_outputs['relax_mag']['site_magnetization']['sphere']['x']['site_moment']
-        tot_mag_site = all_outputs['relax_mag']['site_magnetization']['sphere']['x']['total_magnetization']['tot']
-        tot_mag_full_cell = all_outputs['relax_mag']['site_magnetization']['full_cell']
-        for v in site_moms.values():
-            magmoms.append(v['tot'])
-        results_dict['magmoms'] = magmoms
-        results_dict['total_magnetizations_on_sites'] = tot_mag_site
-        results_dict['total_magnetizations_full_cell'] = tot_mag_full_cell
-    if 'final_static' in all_outputs.keys():
-        energy = all_outputs['final_static']['total_energies']['energy_no_entropy']
-        results_dict['total_energy_final_static'] = energy
-        
+    for key, value in all_outputs.items():
+        results_dict[key] = value.get_dict()
     return orm.Dict(dict=results_dict)
 
+def get_last_input(workchain):
+    calcjobs = []
+    descendants = workchain.called_descendants
+    for desc in descendants:
+        if desc.process_label == 'VaspCalculation':
+            calcjobs.append(desc)
+    return calcjobs[-1].inputs.parameters
 
 class VaspMultiStageWorkChain(WorkChain):
     """Multi Stage Workchain"""
-    _verbose = False
 
     @classmethod
     def define(cls, spec):
@@ -253,50 +183,46 @@ class VaspMultiStageWorkChain(WorkChain):
         spec.input('parameters', valid_type=orm.Dict)
         spec.input('potential_family', valid_type=orm.Str, required=True)
         spec.input('potential_mapping', valid_type=orm.Dict, required=False)
-        spec.input(
-            'max_relax_iterations', 
-            valid_type=orm.Int, 
-            default=lambda: orm.Int(2))
         spec.input('settings', valid_type=orm.Dict, required=False)
         spec.input(
             'protocol_tag',
             valid_type=orm.Str,
             required=False,
-            default=lambda: orm.Str('standard'))
+            default=lambda: orm.Str('S0R3S'))
+        spec.input(
+            'hubbard_tag',
+            valid_type=orm.Str,
+            required=False,
+            default=lambda: orm.Str('MPSet'))
         spec.input(
             'potcar_set',
             valid_type=orm.Str,
             default=lambda: orm.Str('VASP'),
             help='Select which potcar set should be used to construct mappin. VASP or MPRelaxSet')
-        
+        spec.input(
+            'parent_calc_folder',
+            valid_type=orm.RemoteData,
+            required=False
+        )
         spec.input('vasp_base.vasp.metadata.options.parser_name',
                    valid_type=str,
                    default='vasp_base_parser',
                    non_db=True,
                    help='Parser of the calculation: the default is cp2k_advanced_parser to get the necessary info')
         
-        spec.exit_code(0, 'NO_ERROR', message='the sun is shining')
-        
-        spec.exit_code(420, 'ERROR_NO_CALLED_WORKCHAIN', message='no called workchain detected')
-        
         spec.outline(
             cls.initialize,
-            if_(cls.should_run_initial_static)(
-                cls.run_static,
-                # cls.verify_static,
-                cls.inspect_static,
-            ),
-            while_(cls.should_run_relax)(
-                cls.run_relax,
-                cls.inspect_relax
-            ),
-            if_(cls.should_run_final_static)(
-                cls.run_static,
-                cls.inspect_static,
+            while_(cls.should_run_next_stage)(
+                cls.run_stage,
+                cls.inspect_stage,
             ),
             cls.results,
         )
-
+        spec.exit_code(0, 'NO_ERROR', message='the sun is shining')
+        spec.exit_code(420, 'ERROR_NO_CALLED_WORKCHAIN', message='no called workchain detected')
+        spec.exit_code(800, 'ERROR_PROTOCOL_TAG', message='protocol has no stage_0 tag!')
+        spec.exit_code(801, 'ERROR_UNSUPPORTED_CALC', message='An unsupported calculation is requested!')
+        spec.exit_code(802, 'ERROR_UNRECOVERABLE_FAILURE', message='VaspBaseWorkChain could not handle the failure!')
         spec.output('relax.structure', valid_type=orm.StructureData, required=False)
         spec.output('output_parameters', valid_type=orm.Dict, required=True)
         spec.output('errors_warnings', valid_type=orm.Dict, required=False)
@@ -304,170 +230,131 @@ class VaspMultiStageWorkChain(WorkChain):
         
 
     def initialize(self):
-        """Initialize."""
-        self.ctx.current_structure = self.inputs.structure
-        self.ctx.is_scf_converged = False
-        self.ctx.is_strc_converged = False
+        """Initialize inputs and settings"""
         self.ctx.vasp_base = AttributeDict(self.exposed_inputs(VaspBaseWorkChain, 'vasp_base'))
+
+        self.ctx.current_structure = self.inputs.structure
+        
+        self.ctx.is_strc_converged = False
+        
         self.inputs.potential_mapping = get_potcar_mapping(self.ctx.current_structure, self.inputs.potcar_set)
         
         self.ctx.all_outputs = {}
-
-        self.ctx.iteration = 0
-    
-        try:
-            self._verbose = self.inputs.verbose.value
-            # self.ctx.inputs.verbose = self.inputs.verbose
-        except AttributeError:
-            pass
-
+        
+        # Counter to terminate in case calculation in not converging
+        self.ctx.conv_interation = 0
+        
+        hubbard_tag = None
+        if self.inputs.parameters['LDAU']:
+            hubbard_tag = self.inputs.hubbard_tag
+        
         self.ctx.parameters = setup_protocols(
-            self.inputs.protocol_tag, 
+            self.inputs.protocol_tag,
             self.ctx.current_structure,
-            self.inputs.parameters)
+            self.inputs.parameters,
+            hubbard_tag=hubbard_tag)
 
-        self.ctx.initial_static = self.ctx.parameters['stages']['initial_static']
-        self.ctx.relax = self.ctx.parameters['stages']['relax']
-        self.ctx.final_static = self.ctx.parameters['stages']['final_static']
-        self.ctx.nscf = self.ctx.parameters['stages']['nscf']
-
-        self._initialize_settings()
-
-    def _initialize_settings(self):
-
-        if 'settings' in self.inputs:
-            settings = AttributeDict(self.inputs.settings.get_dict())
-        else:
-            settings = AttributeDict({'ADDITIONAL_RETRIEVE_LIST':['INCAR']})
-            self.inputs.settings = settings
-        
-        if self.ctx.relax:
-            dict_entry = {'add_structure': True}
-            try:
-                settings.parser_settings.update(dict_entry)
-            except AttributeError:
-                settings.parser_settings = dict_entry
-        
-    def should_run_initial_static(self):
-        """Perform initial static calculation to refine
-        settings related to the electronic structure.
-        """
-        return self.ctx.initial_static
-
-    def should_run_relax(self):
-        """Run relaxation until it's converged or we reach the maximum allowed iteration.
-        """
-        return (not self.ctx.is_strc_converged) and (self.ctx.iteration < self.inputs.max_relax_iterations)
-        
-    def should_run_final_static(self):
-        """We only wanna do it if we have a relaxed structure."""
-        return self.ctx.is_strc_converged and self.ctx.final_static
-
-    def run_static(self):
-        """Prepares and submits static calculations as long as they are needed."""
-        self.ctx.vasp_base.vasp.structure = self.ctx.current_structure
         self.ctx.vasp_base.vasp.potential = PotcarData.get_potcars_from_structure(
                 structure=self.inputs.structure,
                 family_name=self.inputs.potential_family.value,
                 mapping=self.inputs.potential_mapping.get_dict())
-        if not self.ctx.is_strc_converged:
-            self.ctx.vasp_base.vasp.parameters = get_stage_incar(self.ctx.parameters, orm.Str('incar_static_initial'))
+
+        if 'settings' in self.inputs:
+            settings = AttributeDict(self.inputs.settings.get_dict())
         else:
-            self.ctx.vasp_base.vasp.parameters = get_stage_incar(self.ctx.parameters, orm.Str('incar_static_final'))
-        
+            settings = AttributeDict({'ADDITIONAL_RETRIEVE_LIST':['INCAR', 'OSZICAR']})
+            self.inputs.settings = settings
+
         self.ctx.vasp_base.vasp.settings = self.inputs.settings
-        
-        if self.ctx.is_strc_converged:
-            self.ctx.vasp_base.vasp.restart_folder = self.ctx.workchain_relax[-1].outputs.remote_folder
-            self.ctx.vasp_base.vasp['metadata'].update({
-            'label': 'final_static',
-            'call_link_label': 'final_static',
-            })
+        if 'parent_calc_folder' in self.inputs:
+            self.ctx.parent_calc_folder = self.inputs.parent_calc_folder
         else:
-            self.ctx.vasp_base['vasp']['metadata'].update({
-            'label': 'initial_static',
-            'call_link_label': 'initial_static',
-            })
+            self.ctx.parent_calc_folder = None
+
+        self.ctx.stage_idx = 0
+        if f'stage_{self.ctx.stage_idx}' in self.ctx.parameters.get_dict():
+            self.ctx.next_stage_exists = True
+        else:
+            return self.exit_codes.ERROR_PROTOCOL_TAG #pylin: disable=no-memeber
+
+        # Get the requested calculation types
+        self.ctx.stage_calc_types = {}
+        
+        for stage_tag in list(self.ctx.parameters.keys()):
+            if self.ctx.parameters[stage_tag]['IBRION'] in [-1, 1, 2, 3]:
+                if self.ctx.parameters[stage_tag]['IBRION'] == -1:
+                    self.ctx.stage_calc_types[stage_tag] = 'static'
+                else:
+                    self.ctx.stage_calc_types[stage_tag] = 'relaxation'
+            else:
+                return self.ctx.exit_codes.ERROR_UNSUPPORTED_CALC
+        
+
+    def should_run_next_stage(self):
+        """True if there is another stage to run"""
+        return self.ctx.next_stage_exists and self.ctx.conv_interation <= 2
+
+    def run_stage(self):
+        """Prepares and submits static calculations as long as they are needed."""
+        self.ctx.stage_tag = f'stage_{self.ctx.stage_idx}'
+
+        self.ctx.vasp_base.vasp.structure = self.ctx.current_structure
+        # self.ctx.vasp_base.vasp.parameters = self.ctx.parameters[self.ctx.stage_tag]
+        self.ctx.vasp_base.vasp.parameters = get_stage_incar(self.ctx.parameters, orm.Str(self.ctx.stage_tag))
+        self.ctx.vasp_base.vasp['metadata'].update({
+            'label': f'{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}',
+            'call_link_label': f'run_{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}',
+        })
         
         inputs = prepare_process_inputs(VaspBaseWorkChain, self.ctx.vasp_base)
         running = self.submit(VaspBaseWorkChain, **inputs)
-        self.report(f"Submitted Static VaspBaseWorkchain <pk>:{running.pk}")
-        return ToContext(workchain_static=(append_(running)))
+        self.report(f"Submitted VaspBaseWorkchain <pk>:{running.pk} for {self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}")
+        return ToContext(workchain=(append_(running)))
 
-    def inspect_static(self):
-        
+    def inspect_stage(self):
+        """Do the inspection of finished stage!"""
         try:
-            workchain = self.ctx.workchain_static[-1]
+            workchain = self.ctx.workchain[-1]
         except IndexError:
             self.report('There is no {} in the called workchain list.'.format(self.ctx.workchain_static[-1].process_label))
             return self.exit_codes.ERROR_NO_CALLED_WORKCHAIN  # pylint: disable=no-member
 
-        workchain = self.ctx.workchain_static[-1]
         if not workchain.is_finished_ok:
-            self.report("The initial static calculation did not finish properly")
-            
-        else:
-            self.ctx.is_scf_converged = workchain.outputs.misc['converged_electronically']
-            if self.ctx.is_scf_converged:
-                self.report('SCF converged')
-                if self.ctx.is_strc_converged and self.ctx.final_static:
-                    self.out('final_incar.final_static', workchain.inputs.vasp__parameters)
-                    self.ctx.all_outputs['final_static'] = workchain.outputs.misc
-                    self.report("Band Gaps are {} and {}".format(workchain.outputs.misc['band_gap']['spin_down'], workchain.outputs.misc['band_gap']['spin_up']))
-                else:
-                    self.out('final_incar.initial_static', workchain.inputs.vasp__parameters)
-                    self.ctx.all_outputs['initial_static'] = workchain.outputs.misc
-                    self.report("Band Gaps are {} and {}".format(workchain.outputs.misc['band_gap']['spin_down'], workchain.outputs.misc['band_gap']['spin_up']))
+            self.report("The initial static calculation did not finish properly")            
+            return self.exit_codes.ERROR_UNRECOVERABLE_FAILURE
+        
+        if self.ctx.stage_calc_types[self.ctx.stage_tag] == 'static':
+            if workchain.outputs.misc['converged_electronically']:
+                self.ctx.parent_calc_folder = workchain.outputs.remote_folder
+                self.ctx.stage_idx += 1
+                self.report(f"Band Gaps are {workchain.outputs.misc['band_gap']['spin_down']} and {workchain.outputs.misc['band_gap']['spin_up']}")
+                # self.out(f'final_incar.{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}', workchain.inputs.vasp__parameters)
+                self.out(f'final_incar.{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}', get_last_input(workchain))
+                self.ctx.all_outputs[f'{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}'] = workchain.outputs.misc
+                self.ctx.conv_interation = 0
             else:
-                self.ctx.is_scf_converged = False
-             
-    def run_relax(self):
-        """
-        Prepares and submit calculation to relax structure.
-        """
-        self.inputs.structure = self.ctx.current_structure
-
-        self.ctx.vasp_base.vasp.parameters = get_stage_incar(self.ctx.parameters, orm.Str('incar_relax'))
-        if self.ctx.iteration == 0:
-            self.ctx.vasp_base.vasp.restart_folder = self.ctx.workchain_static[-1].outputs.remote_folder
-        else:
-            self.ctx.vasp_base.vasp.restart_folder = self.ctx.workchain_relax[-1].outputs.remote_folder
+                self.ctx.conv_interation += 1
         
-        self.ctx.vasp_base['vasp']['metadata'].update({
-            'label': f'relax_iteration_{self.ctx.iteration}',
-            'call_link_label': f'relax_iteration_{self.ctx.iteration}',
-            })
-
-        inputs = prepare_process_inputs(VaspBaseWorkChain, self.ctx.vasp_base)
-        
-        running = self.submit(VaspBaseWorkChain, **inputs)
-        self.report(f"Submitted Relax VaspBaseWorkchain <pk>:{running.pk}_Iteration_{self.ctx.iteration}")
-        self.ctx.iteration += 1
-        return ToContext(workchain_relax=(append_(running)))    
-
-    def inspect_relax(self):
-        """Inspects if static workchain finished ok 
-        and also should check the scf convergence.
-        """
-
-        workchain = self.ctx.workchain_relax[-1]
-        if not workchain.is_finished_ok:
-            self.report("Relax calculation did not finish properly")
-        else:
-            self.ctx.is_strc_converged = workchain.outputs.misc['converged']
-            if self.ctx.is_strc_converged:
-                self.report(f'Fully converged in relax')
-                self.ctx.relax = False
-                self.out('final_incar.relax', workchain.inputs.vasp__parameters)
-                self.ctx.all_outputs['relax_misc'] = workchain.outputs.misc
-                self.report("Band Gaps are {} and {}".format(workchain.outputs.misc['band_gap']['spin_down'], workchain.outputs.misc['band_gap']['spin_up']))
+        if self.ctx.stage_calc_types[self.ctx.stage_tag] == 'relaxation':
+            if workchain.outputs.misc['converged']:
+                self.ctx.parent_calc_folder = workchain.outputs.remote_folder
+                self.ctx.stage_idx += 1
+                self.ctx.is_strc_converged = True
                 self.ctx.current_structure = workchain.outputs.structure
+                self.report(f"Band Gaps are {workchain.outputs.misc['band_gap']['spin_down']} and {workchain.outputs.misc['band_gap']['spin_up']}")
+                # self.out(f'final_incar.{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}', workchain.inputs.vasp__parameters)
+                self.out(f'final_incar.{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}', get_last_input(workchain))
+                self.ctx.all_outputs[f'{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}'] = workchain.outputs.misc
+                self.ctx.conv_interation = 0
             else:
-                self.report("Structure is not converged!")
-                
+                self.ctx.conv_interation += 1
+        
+        if not f'stage_{self.ctx.stage_idx}' in self.ctx.parameters.get_dict():
+            self.ctx.next_stage_exists = False
+          
     def results(self):
         """Attach the remaining output results."""
-        
+        self.report(self.ctx.all_outputs)
         self.out('output_parameters', extract_wrap_results(**self.ctx.all_outputs))
         if self.ctx.is_strc_converged:
             self.out('relax.structure', self.ctx.current_structure)
