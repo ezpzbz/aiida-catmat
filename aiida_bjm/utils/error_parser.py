@@ -1,24 +1,18 @@
-"""Small parser to get the reported 
+"""Small parser to get the reported
 WARNING and ERROR messages in _scheduler-stdout.txt
 """
 
 STDOUT_ERRS = {
     'tet': [
-        'Tetrahedron method fails for NKPT<4',
-        'Fatal error detecting k-mesh',
-        'Fatal error: unable to match k-point',
-        'Routine TETIRR needs special values',
-        'Tetrahedron method fails (number of k-points < 4)'
+        'Tetrahedron method fails for NKPT<4', 'Fatal error detecting k-mesh', 'Fatal error: unable to match k-point',
+        'Routine TETIRR needs special values', 'Tetrahedron method fails (number of k-points < 4)'
     ],
     'inv_rot_mat': ['inverse of rotation matrix was not found (increase SYMPREC)'],
     'brmix': ['BRMIX: very serious problems'],
     'subspacematrix': ['WARNING: Sub-Space-Matrix is not hermitian in DAV'],
     'tetirr': ['Routine TETIRR needs special values'],
     'incorrect_shift': ['Could not get correct shifts'],
-    'real_optlay': [
-        'REAL_OPTLAY: internal error', 
-        'REAL_OPT: internal ERROR'
-    ],
+    'real_optlay': ['REAL_OPTLAY: internal error', 'REAL_OPT: internal ERROR'],
     'rspher': ['ERROR RSPHER'],
     'dentet': ['DENTET'],
     'too_few_bands': ['TOO FEW BANDS'],
@@ -42,12 +36,10 @@ STDOUT_ERRS = {
     'point_group': ['Error: point group operation missing'],
     'aliasing': ['WARNING: small aliasing (wrap around) errors must be expected'],
     'aliasing_incar': ['Your FFT grids (NGX,NGY,NGZ) are not sufficient for an accurate'],
-    }
-
-STDERR_ERRS = {
-    'walltime': ['PBS: job killed: walltime'],
-    'memory': ['job killed: memory']
 }
+
+STDERR_ERRS = {'walltime': ['PBS: job killed: walltime'], 'memory': ['job killed: memory']}
+
 
 def get_stdout_errs(calculation):
     """
@@ -58,7 +50,7 @@ def get_stdout_errs(calculation):
     error_msgs = set()
     with calculation.outputs.retrieved.open('_scheduler-stdout.txt') as handler:
         for line in handler:
-            l = line.strip()
+            l = line.strip()  #pylint: disable=invalid-name
             for err, msgs in STDOUT_ERRS.items():
                 if err in errors_subset_to_catch:
                     for msg in msgs:
@@ -66,6 +58,7 @@ def get_stdout_errs(calculation):
                             errors.add(err)
                             error_msgs.add(msg)
     return errors, error_msgs
+
 
 def get_stderr_errs(calculation):
     """
@@ -76,7 +69,7 @@ def get_stderr_errs(calculation):
     error_msgs = set()
     with calculation.outputs.retrieved.open('_scheduler-stderr.txt') as handler:
         for line in handler:
-            l = line.strip()
+            l = line.strip()  #pylint: disable=invalid-name
             for err, msgs in STDERR_ERRS.items():
                 if err in errors_subset_to_catch:
                     for msg in msgs:

@@ -2,7 +2,6 @@
 
 import collections
 
-
 from aiida.orm import Dict
 from aiida.engine import calcfunction
 
@@ -35,4 +34,6 @@ def aiida_dict_merge(to_dict, from_dict):
     dict_merge(to_dict, from_dict)
 
     return Dict(dict=to_dict)
+
+
 #EOF

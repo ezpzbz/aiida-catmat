@@ -1,35 +1,29 @@
 """ AiiDA-BJM Parsers """
 import io
 import os
-from aiida.common import exceptions
 
+from pymatgen.io.vasp import Vasprun, Outcar, Oszicar, Poscar
+from pymatgen.electronic_structure.core import Spin
+
+from aiida.common import exceptions
 from aiida.parsers import Parser
 from aiida.common import OutputParsingError, NotExistent
 from aiida.engine import ExitCode
 from aiida.orm import Dict
 from aiida.plugins import DataFactory
 
-from pymatgen.io.vasp import Vasprun, Outcar, Oszicar, Poscar
-from pymatgen.electronic_structure.core import Spin
-
 StructureData = DataFactory('structure')  # pylint: disable=invalid-name
 STDOUT_ERRS = {
     'tet': [
-        'Tetrahedron method fails for NKPT<4',
-        'Fatal error detecting k-mesh',
-        'Fatal error: unable to match k-point',
-        'Routine TETIRR needs special values',
-        'Tetrahedron method fails (number of k-points < 4)'
+        'Tetrahedron method fails for NKPT<4', 'Fatal error detecting k-mesh', 'Fatal error: unable to match k-point',
+        'Routine TETIRR needs special values', 'Tetrahedron method fails (number of k-points < 4)'
     ],
     'inv_rot_mat': ['inverse of rotation matrix was not found (increase SYMPREC)'],
     'brmix': ['BRMIX: very serious problems'],
     'subspacematrix': ['WARNING: Sub-Space-Matrix is not hermitian in DAV'],
     'tetirr': ['Routine TETIRR needs special values'],
     'incorrect_shift': ['Could not get correct shifts'],
-    'real_optlay': [
-        'REAL_OPTLAY: internal error', 
-        'REAL_OPT: internal ERROR'
-    ],
+    'real_optlay': ['REAL_OPTLAY: internal error', 'REAL_OPT: internal ERROR'],
     'rspher': ['ERROR RSPHER'],
     'dentet': ['DENTET'],
     'too_few_bands': ['TOO FEW BANDS'],
@@ -53,12 +47,9 @@ STDOUT_ERRS = {
     'point_group': ['Error: point group operation missing'],
     'aliasing': ['WARNING: small aliasing (wrap around) errors must be expected'],
     'aliasing_incar': ['Your FFT grids (NGX,NGY,NGZ) are not sufficient for an accurate'],
-    }
-
-STDERR_ERRS = {
-    'walltime': ['PBS: job killed: walltime'],
-    'memory': ['job killed: memory']
 }
+
+STDERR_ERRS = {'walltime': ['PBS: job killed: walltime'], 'memory': ['job killed: memory']}
 # From https://www.vasp.at/wiki/index.php/GGA
 GGA_FUNCTIONALS = {
     '91': 'PW91(Perdew-Wang91)',
@@ -98,8 +89,11 @@ METAGGA_FUNCTIONALS = {
     'SCAN': 'Strongly constrained and appropriately normed semilocal density functional'
 }
 
+
 class VaspBaseParser(Parser):
     """Basic Parser for VaspCalculation"""
+
+    # pylint: disable=inconsistent-return-statements
     def parse(self, **kwargs):
         """Receives in input a dictionary of retrieved nodes. Does all the logic here."""
 
@@ -118,11 +112,11 @@ class VaspBaseParser(Parser):
             vout = None
 
         errors = self._parse_stdout()
-        
+
         results, structure = self._parse_results(vrun=vrun, vout=vout, errors=errors)
 
         self.out('misc', Dict(dict=results))
-        
+
         if structure is not None:
             self.out('structure', StructureData(pymatgen_structure=structure))
 
@@ -132,30 +126,31 @@ class VaspBaseParser(Parser):
         """
         errors = {}
         errors_subset_to_catch = list(STDOUT_ERRS.keys())
-        
+
         with self.retrieved.open('_scheduler-stdout.txt') as handler:
             for line in handler:
-                l = line.strip()
+                l = line.strip()  #pylint: disable=invalid-name
                 for err, msgs in STDOUT_ERRS.items():
                     if err in errors_subset_to_catch:
                         for msg in msgs:
                             if l.find(msg) != -1:
                                 errors[err] = msg
-        
+
         with self.retrieved.open('_scheduler-stderr.txt') as handler:
             for line in handler:
-                l = line.strip()
+                l = line.strip()  #pylint: disable=invalid-name
                 for err, msgs in STDOUT_ERRS.items():
                     if err in errors_subset_to_catch:
                         for msg in msgs:
                             if l.find(msg) != -1:
                                 errors[err] = msg
-        
+
         return errors
-    
+
     @staticmethod
-    def _parse_results(vrun, vout, errors):
-        
+    def _parse_results(vrun, vout, errors):  #pylint: disable=too-many-statements
+        """Parse results"""
+
         def _site_magnetization(structure, magnetizations):
             site_mags = []
             magmoms = []
