@@ -13,8 +13,7 @@
     "setup_requires": ["reentry"],
     "reentry_register": true,
     "install_requires": [
-        "aiida-vasp>1.0.0",
-        "aiida-core>=1.1.0,<2.0.0"
+        "aiida-core[atomic_tools]>=1.1.0,<2.0.0"
     ],
     "entry_points": {
         "aiida.parsers": [
@@ -33,10 +32,10 @@
             "pytest==4.4.1"
         ],
         "pre-commit": [
-                "pre-commit==1.17.0",
-                "yapf==0.28.0",
-                "prospector==1.1.7",
-                "pylint==2.3.1"
+            "pre-commit==2.0.1",
+            "yapf==0.28.0",
+            "prospector==1.2.0",
+            "pylint==2.4.4"
         ]
     }
 }

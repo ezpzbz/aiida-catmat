@@ -1,9 +1,10 @@
 """from aiida-quantumespresso plugin """
 
-
 from aiida.common import AttributeDict
 
 from aiida.orm import Dict
+from aiida.engine.processes import PortNamespace
+
 
 def prepare_process_inputs(process, inputs):
     """Prepare the inputs for submission for the given process, according to its spec.
@@ -24,7 +25,6 @@ def wrap_bare_dict_inputs(port_namespace, inputs):
     :param inputs: a dictionary of inputs intended for submission of the process
     :return: a dictionary with all bare dictionaries wrapped in `Dict` if dictated by the port namespace
     """
-    from aiida.engine.processes import PortNamespace
 
     wrapped = {}
 
