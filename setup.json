@@ -13,8 +13,7 @@
     "setup_requires": ["reentry"],
     "reentry_register": true,
     "install_requires": [
-        "aiida-vasp>1.0.0",
-        "aiida-core>=1.1.0,<2.0.0"
+        "aiida-core[atomic_tools]>=1.1.0,<2.0.0"
     ],
     "entry_points": {
         "aiida.parsers": [
