@@ -11,26 +11,22 @@ from aiida_bjm.utils import get_stdout_errs, get_stderr_errs
 from pymatgen import Structure
 from pymatgen.io.vasp import Oszicar
 
-StructureData = DataFactory('structure')
+StructureData = DataFactory('structure') # pylint: disable=invalid-name
 VaspCalculation = CalculationFactory('vasp.vasp')  # pylint: disable=invalid-name
 
 @calcfunction
 def update_incar(incar, modifications):
     """Merge two aiida Dict objects."""
     incar = incar.get_dict()
-
-    if isinstance(modifications, Dict):
-        modifications = modifications.get_dict()
-
+    modifications = modifications.get_dict()
     dict_merge(incar, modifications)
-
     return Dict(dict=incar)
 
 @calcfunction
 def apply_strain_on_structure(retrived_folder): 
-    with n.outputs.retrieved.open('CONTCAR') as handler:  
+    with retrived_folder.open('CONTCAR') as handler:  
         structure = Structure.from_file(handler.name) 
-    structure.apply_strain(0.2) 
+    structure.apply_strain(0.2)
     return StructureData(pymatgen_structure=structure)
 
 class VaspBaseWorkChain(BaseRestartWorkChain):
@@ -87,13 +83,10 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
     def handle_tetrahedron(self, calculation):
         """Handle 'ERROR_TETRAHEDRON' exit code"""
         if 'tet' in self.ctx.stdout_errors[0]:
-            if 'KSPACING' in self.ctx.parameters.get_dict():
-                old_kspacing = self.ctx.parameters['KSPACING']
-                new_kspacing = self.ctx.parameters['KSPACING'] * 0.8
-                modifications = Dict(dict={
-                    'KSPACING': new_kspacing
-                })
-                self.ctx.inputs.parameters = update_incar(self.ctx.parameters, modifications)
+            if 'kspacing' in self.ctx.inputs:
+                old_kspacing = self.ctx.inputs.kspacing.value
+                new_kspacing = old_kspacing * 0.8
+                self.ctx.inputs.kspacing = new_kspacing
                 action = f'KSPACING decreased by 80%: <{old_kspacing}> to <{new_kspacing}>'
                 self.report_error_handled(calculation, action)
             else:
@@ -104,7 +97,6 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
                 self.ctx.inputs.parameters = update_incar(self.ctx.parameters, modifications)
                 action = f'Changed to Gaussian smearing with sigma value of 0.05'
                 self.report_error_handled(calculation, action)
-            
                 return ProcessHandlerReport(False)
         
     @process_handler(priority=110, enabled=True)

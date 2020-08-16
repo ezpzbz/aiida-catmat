@@ -59,6 +59,44 @@ STDERR_ERRS = {
     'walltime': ['PBS: job killed: walltime'],
     'memory': ['job killed: memory']
 }
+# From https://www.vasp.at/wiki/index.php/GGA
+GGA_FUNCTIONALS = {
+    '91': 'PW91(Perdew-Wang91)',
+    'PE': 'PBE(Perdew-Burke-Ernzerhof)',
+    'AM': 'AM05',
+    'HL': 'HL(Hendin-Lundqvist)',
+    'CA': 'CA(Ceperley-Alder)',
+    'PZ': 'Ceperley-Alder, parametrization of Perdew-Zunger',
+    'WI': 'Wigner',
+    'RP': 'revised Perdew-Burke-Ernzerhof (RPBE) with Pade Approximation',
+    'RE': 'revPBE',
+    'VW': 'Vosko-Wilk-Nusair (VWN)',
+    'B3': 'B3LYP, where LDA part is with VWN3-correlation',
+    'B5': 'B3LYP, where LDA part is with VWN5-correlation',
+    'BF': 'BEEF, xc (with libbeef)',
+    'CO': 'no exchange-correlation',
+    'PS': 'Perdew-Burke-Ernzerhof revised for solids (PBEsol)',
+    'OR': 'optPBE',
+    'BO': 'optB88',
+    'MK': 'optB86b',
+    'RA': 'new RPA Perdew Wang',
+    '03': 'range-separated ACFDT (LDA - sr RPA) mu=0.3A^3',
+    '05': 'range-separated ACFDT (LDA - sr RPA) mu=0.5A^3',
+    '10': 'range-separated ACFDT (LDA - sr RPA) mu=1.0A^3',
+    '20': 'range-separated ACFDT (LDA - sr RPA) mu=2.03A^3',
+    'PL': 'new RPA+ Perdew Wang'
+}
+
+METAGGA_FUNCTIONALS = {
+    'TPSS': 'TPSS',
+    'RTPSS': 'revised TPSS',
+    'M06L': 'M06-L',
+    'MS0': 'MS0',
+    'MS1': 'MS1',
+    'MS2': 'MS2',
+    'MBJ': 'modified Becke-Johnson exchange potential in combination with L(S)DA-correlation',
+    'SCAN': 'Strongly constrained and appropriately normed semilocal density functional'
+}
 
 class VaspBaseParser(Parser):
     """Basic Parser for VaspCalculation"""
@@ -120,32 +158,58 @@ class VaspBaseParser(Parser):
         
         def _site_magnetization(structure, magnetizations):
             site_mags = []
+            magmoms = []
             symbols = [specie.symbol for specie in structure.species]
             for symbol, magnetization in zip(symbols, magnetizations):
                 mag_dict = {}
                 mag_dict[symbol] = magnetization
+                magmoms.append(magnetization['tot'])
                 site_mags.append(mag_dict)
-            return site_mags
+            return site_mags, magmoms
 
         results = {}
         if vrun:
-            
+            results['energy_unit'] = 'eV'
+            results['band_gap_unit'] = 'eV'
+            results['extra_parameters'] = {}
             results['converged'] = vrun.converged
             results['converged_ionically'] = vrun.converged_ionic
             results['converged_electronically'] = vrun.converged_electronic
-            results['total_energies'] = {}
-            results['total_energies']['energy_no_entropy'] = vrun.final_energy
-            results['band_gap'] = {}
+            results['DFT+U'] = vrun.is_hubbard
+            results['potcar_specs'] = vrun.potcar_spec
+            results['extra_parameters']['number_of_bands'] = vrun.parameters['NBANDS']
+            results['extra_parameters']['number_of_electrons'] = vrun.parameters['NELECT']
+            results['extra_parameters']['ebreak'] = vrun.parameters['EBREAK']
+            results['extra_parameters']['amix'] = vrun.parameters['AMIX']
+            results['extra_parameters']['bmix'] = vrun.parameters['BMIX']
+            results['extra_parameters']['amin'] = vrun.parameters['AMIN']
+            results['extra_parameters']['amix_mag'] = vrun.parameters['AMIX_MAG']
+            results['extra_parameters']['bmix_mag'] = vrun.parameters['BMIX_MAG']
+            results['extra_parameters']['imix'] = vrun.parameters['IMIX']
+            results['extra_parameters']['ngx'] = vrun.parameters['NGX']
+            results['extra_parameters']['ngy'] = vrun.parameters['NGY']
+            results['extra_parameters']['ngz'] = vrun.parameters['NGZ']
+            results['extra_parameters']['ngxf'] = vrun.parameters['NGXF']
+            results['extra_parameters']['ngyf'] = vrun.parameters['NGYF']
+            results['extra_parameters']['ngzf'] = vrun.parameters['NGZF']
+            results['run_type'] = vrun.run_type
+            results['final_energy'] = vrun.final_energy
+            results['final_energy_per_atom'] = vrun.as_dict()['output']['final_energy_per_atom']
+            results['fermi_energy'] = vrun.efermi
             if vrun.parameters['ISPIN'] == 2:
-                results['band_gap']['spin_up'] = vrun.complete_dos.get_gap(spin=Spin.up)
-                results['band_gap']['spin_down'] = vrun.complete_dos.get_gap(spin=Spin.down)
+                results['spin_polarized'] = True
+                results['band_gap_spin_up'] = vrun.complete_dos.get_gap(spin=Spin.up)
+                results['band_gap_spin_down'] = vrun.complete_dos.get_gap(spin=Spin.down)
             else:
-                results['band_gap']['spin_up'] = vrun.complete_dos.get_gap()
-                results['band_gap']['spin_down'] = vrun.complete_dos.get_gap()
+                results['spin_polarized'] = False
+                results['band_gap_spin_up'] = vrun.complete_dos.get_gap()
+                results['band_gap_spin_down'] = vrun.complete_dos.get_gap()
             results['errors'] = errors
             results['total_magnetization'] = vout.total_mag
             if 'LORBIT' in vrun.incar:
-                results['site_magnetizations'] = _site_magnetization(vrun.final_structure, vout.magnetization)
+                magns = _site_magnetization(vrun.final_structure, vout.magnetization)
+                results['complete_site_magnetizations'] = magns[0]
+                results['converged_magmoms'] = magns[1]
             if vrun.incar['NSW'] != 0:
                 structure = vrun.final_structure
             else:

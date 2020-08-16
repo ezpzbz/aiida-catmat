@@ -23,8 +23,10 @@ from aiida_bjm.utils import prepare_process_inputs
 
 VaspBaseWorkChain = WorkflowFactory('vasp.base') #pylint: disable=invalid-name
 PotcarData = DataFactory('vasp.potcar') #pylint: disable=invalid-name
+KpointsData = DataFactory('array.kpoints') #pylint: disable=invalid-name
 
 def get_magmom(structure_pmg):
+    """Construct MAGMOM tag from structure"""
     # Get default
     default_magmoms = []
     for specie in structure_pmg.species:
@@ -147,6 +149,16 @@ def setup_protocols(protocol_tag, structure, user_incar_settings, hubbard_tag=No
         dict_merge(protocol[key], user_incar_settings)
 
     return orm.Dict(dict=protocol)
+@calcfunction
+def set_kpoints(structure, kspacing, kgamma=orm.Bool(False)):
+    kpoints = KpointsData()
+    structure_pmg = structure.get_pymatgen_structure()
+    kpoints.set_cell_from_structure(structure_pmg)
+    if kgamma:
+        kpoints.set_kpoints_mesh_from_density(kspacing.value)
+    else:
+        kpoints.set_kpoints_mesh_from_density(kspacing.value, offset=[0.5, 0.5, 0.5])
+    return kpoints
 
 @calcfunction
 def get_stage_incar(parameters, stage_tag):
@@ -155,11 +167,10 @@ def get_stage_incar(parameters, stage_tag):
 
 @calcfunction
 def extract_wrap_results(**all_outputs):
-    results_dict = {
-        'energy_unit': 'eV'
-    }
+    results_dict = {}
     for key, value in all_outputs.items():
         results_dict[key] = value.get_dict()
+        del results_dict[key]['complete_site_magnetizations']
     return orm.Dict(dict=results_dict)
 
 def get_last_input(workchain):
@@ -181,6 +192,9 @@ class VaspMultiStageWorkChain(WorkChain):
             include=['vasp.code', 'vasp.kpoints','vasp.restart_folder', 'vasp.metadata', 'vasp.potential'], namespace='vasp_base')
         spec.input('structure', valid_type=(orm.StructureData, orm.CifData))
         spec.input('parameters', valid_type=orm.Dict)
+        spec.input('kspacing', valid_type=orm.Float, required=False, help='distance to generate kponits mesh')
+        spec.input('kgamma', valid_type=orm.Bool, required=False, help='gamma centered kpoints in kspacing case')
+        spec.input('magmom', valid_type=orm.List, required=False, help='List of MAGMOM')
         spec.input('potential_family', valid_type=orm.Str, required=True)
         spec.input('potential_mapping', valid_type=orm.Dict, required=False)
         spec.input('settings', valid_type=orm.Dict, required=False)
@@ -200,7 +214,7 @@ class VaspMultiStageWorkChain(WorkChain):
             default=lambda: orm.Str('VASP'),
             help='Select which potcar set should be used to construct mappin. VASP or MPRelaxSet')
         spec.input(
-            'parent_calc_folder',
+            'restart_folder',
             valid_type=orm.RemoteData,
             required=False
         )
@@ -223,63 +237,97 @@ class VaspMultiStageWorkChain(WorkChain):
         spec.exit_code(800, 'ERROR_PROTOCOL_TAG', message='protocol has no stage_0 tag!')
         spec.exit_code(801, 'ERROR_UNSUPPORTED_CALC', message='An unsupported calculation is requested!')
         spec.exit_code(802, 'ERROR_UNRECOVERABLE_FAILURE', message='VaspBaseWorkChain could not handle the failure!')
-        spec.output('relax.structure', valid_type=orm.StructureData, required=False)
+        spec.output('structure', valid_type=orm.StructureData, required=False)
         spec.output('output_parameters', valid_type=orm.Dict, required=True)
-        spec.output('errors_warnings', valid_type=orm.Dict, required=False)
+        spec.output('magmom', valid_type=orm.List, required=False, help='List of MAGMOM')
         spec.output_namespace('final_incar', valid_type=orm.Dict, required=False, dynamic=True)
         
 
     def initialize(self):
         """Initialize inputs and settings"""
+        # Initiate inputs and structure
         self.ctx.vasp_base = AttributeDict(self.exposed_inputs(VaspBaseWorkChain, 'vasp_base'))
-
         self.ctx.current_structure = self.inputs.structure
         
-        self.ctx.is_strc_converged = False
+        # Handle kpoints
+        if 'kspacing' in self.inputs:
+            if 'kgamma' in self.inputs:
+                if self.inputs.kgamma:
+                    kpoints = set_kpoints( #pylint: disable=unexpected-keyword-arg
+                        self.ctx.current_structure, self.inputs.kspacing, self.inputs.kgamma,
+                        metadata={
+                            'label':'set_kpoints',
+                            'description': 'calcfuntion to construct potcar mapping.', 
+                            'call_link_label':'run_set_kpoints'
+                        })
+            else:
+                kpoints = set_kpoints( #pylint: disable=unexpected-keyword-arg
+                    self.ctx.current_structure, self.inpts.kspacing,
+                    metadata={
+                            'label':'set_kpoints',
+                            'description': 'calcfuntion to construct potcar mapping.', 
+                            'call_link_label':'run_set_kpoints'
+                    })
+            self.ctx.vasp_base.vasp.kpoints = kpoints
         
-        self.inputs.potential_mapping = get_potcar_mapping(self.ctx.current_structure, self.inputs.potcar_set)
-        
-        self.ctx.all_outputs = {}
-        
-        # Counter to terminate in case calculation in not converging
-        self.ctx.conv_interation = 0
+        # MAGMOM
+        if 'magmom' in self.inputs:
+            self.ctx.magmom = self.inputs.magmom
+
+        self.inputs.potential_mapping = get_potcar_mapping( #pylint: disable=unexpected-keyword-arg
+            self.ctx.current_structure,
+            self.inputs.potcar_set,
+            metadata={
+                'label':'get_potcar_mapping',
+                'description': 'calcfuntion to construct potcar mapping.', 
+                'call_link_label':'run_get_potcar_mapping'
+            })
         
         hubbard_tag = None
         if self.inputs.parameters['LDAU']:
             hubbard_tag = self.inputs.hubbard_tag
         
-        self.ctx.parameters = setup_protocols(
+        self.ctx.parameters = setup_protocols( #pylint: disable=unexpected-keyword-arg
             self.inputs.protocol_tag,
             self.ctx.current_structure,
             self.inputs.parameters,
-            hubbard_tag=hubbard_tag)
+            hubbard_tag=hubbard_tag,
+            metadata={
+                'label':'setup_protocol', 
+                'description': 'calcfuntion to get and setup INCAR for all stages.', 
+                'call_link_label':'run_setup_protocol'})
 
         self.ctx.vasp_base.vasp.potential = PotcarData.get_potcars_from_structure(
                 structure=self.inputs.structure,
                 family_name=self.inputs.potential_family.value,
                 mapping=self.inputs.potential_mapping.get_dict())
 
+        # Settings
         if 'settings' in self.inputs:
             settings = AttributeDict(self.inputs.settings.get_dict())
         else:
             settings = AttributeDict({'ADDITIONAL_RETRIEVE_LIST':['INCAR', 'OSZICAR']})
             self.inputs.settings = settings
-
         self.ctx.vasp_base.vasp.settings = self.inputs.settings
-        if 'parent_calc_folder' in self.inputs:
-            self.ctx.parent_calc_folder = self.inputs.parent_calc_folder
+        self.ctx.is_strc_converged = False
+        self.ctx.all_outputs = {}
+        self.ctx.conv_interation = 0
+
+        # Restart folder
+        # It is useful if user wants to start later!
+        if 'restart_folder' in self.inputs:
+            self.ctx.restart_folder = self.inputs.restart_folder
         else:
-            self.ctx.parent_calc_folder = None
+            self.ctx.restart_folder = None
 
         self.ctx.stage_idx = 0
         if f'stage_{self.ctx.stage_idx}' in self.ctx.parameters.get_dict():
             self.ctx.next_stage_exists = True
         else:
-            return self.exit_codes.ERROR_PROTOCOL_TAG #pylin: disable=no-memeber
+            return self.exit_codes.ERROR_PROTOCOL_TAG #pylint: disable=no-memeber
 
         # Get the requested calculation types
         self.ctx.stage_calc_types = {}
-        
         for stage_tag in list(self.ctx.parameters.keys()):
             if self.ctx.parameters[stage_tag]['IBRION'] in [-1, 1, 2, 3]:
                 if self.ctx.parameters[stage_tag]['IBRION'] == -1:
@@ -289,7 +337,6 @@ class VaspMultiStageWorkChain(WorkChain):
             else:
                 return self.ctx.exit_codes.ERROR_UNSUPPORTED_CALC
         
-
     def should_run_next_stage(self):
         """True if there is another stage to run"""
         return self.ctx.next_stage_exists and self.ctx.conv_interation <= 2
@@ -299,12 +346,28 @@ class VaspMultiStageWorkChain(WorkChain):
         self.ctx.stage_tag = f'stage_{self.ctx.stage_idx}'
 
         self.ctx.vasp_base.vasp.structure = self.ctx.current_structure
-        # self.ctx.vasp_base.vasp.parameters = self.ctx.parameters[self.ctx.stage_tag]
-        self.ctx.vasp_base.vasp.parameters = get_stage_incar(self.ctx.parameters, orm.Str(self.ctx.stage_tag))
+        
+        # Get relevant INCAR for the current stage.
+        self.ctx.vasp_base.vasp.parameters = get_stage_incar( #pylint: disable=unexpected-keyword-arg
+            self.ctx.parameters, orm.Str(self.ctx.stage_tag),
+            metadata={
+                'label':'get_stage_incar', 
+                'description': 'calcfuntion to get INCAR for current stage',
+                'call_link_label':'run_get_stage_incar'
+            })
+        
+        # Restart
+        if self.ctx.restart_folder:
+            self.ctx.vasp_base.vasp.restart_folder = self.ctx.restart_folder
+
+        # Update lable anc call_link_label
         self.ctx.vasp_base.vasp['metadata'].update({
             'label': f'{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}',
             'call_link_label': f'run_{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}',
         })
+        self.ctx.vasp_base['metadata'] = {}
+        self.ctx.vasp_base['metadata']['label'] = self.ctx.vasp_base.vasp['metadata']['label']
+        self.ctx.vasp_base['metadata']['call_link_label'] = self.ctx.vasp_base.vasp['metadata']['call_link_label']
         
         inputs = prepare_process_inputs(VaspBaseWorkChain, self.ctx.vasp_base)
         running = self.submit(VaspBaseWorkChain, **inputs)
@@ -321,44 +384,39 @@ class VaspMultiStageWorkChain(WorkChain):
 
         if not workchain.is_finished_ok:
             self.report("The initial static calculation did not finish properly")            
-            return self.exit_codes.ERROR_UNRECOVERABLE_FAILURE
+            return self.exit_codes.ERROR_UNRECOVERABLE_FAILURE # pylint: disable=no-member
         
         if self.ctx.stage_calc_types[self.ctx.stage_tag] == 'static':
-            if workchain.outputs.misc['converged_electronically']:
-                self.ctx.parent_calc_folder = workchain.outputs.remote_folder
-                self.ctx.stage_idx += 1
-                self.report(f"Band Gaps are {workchain.outputs.misc['band_gap']['spin_down']} and {workchain.outputs.misc['band_gap']['spin_up']}")
-                # self.out(f'final_incar.{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}', workchain.inputs.vasp__parameters)
-                self.out(f'final_incar.{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}', get_last_input(workchain))
-                self.ctx.all_outputs[f'{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}'] = workchain.outputs.misc
-                self.ctx.conv_interation = 0
-            else:
-                self.ctx.conv_interation += 1
-        
+            converged = workchain.outputs.misc['converged_electronically']
         if self.ctx.stage_calc_types[self.ctx.stage_tag] == 'relaxation':
-            if workchain.outputs.misc['converged']:
-                self.ctx.parent_calc_folder = workchain.outputs.remote_folder
-                self.ctx.stage_idx += 1
-                self.ctx.is_strc_converged = True
-                self.ctx.current_structure = workchain.outputs.structure
-                self.report(f"Band Gaps are {workchain.outputs.misc['band_gap']['spin_down']} and {workchain.outputs.misc['band_gap']['spin_up']}")
-                # self.out(f'final_incar.{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}', workchain.inputs.vasp__parameters)
-                self.out(f'final_incar.{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}', get_last_input(workchain))
-                self.ctx.all_outputs[f'{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}'] = workchain.outputs.misc
-                self.ctx.conv_interation = 0
-            else:
-                self.ctx.conv_interation += 1
+            converged = workchain.outputs.misc['converged']
+            self.ctx.is_strc_converged = True
+            self.ctx.current_structure = workchain.outputs.structure
+
+        self.ctx.restart_folder = workchain.outputs.remote_folder
+        if converged:
+            self.ctx.stage_idx += 1
+            self.report(f"Band Gaps are {workchain.outputs.misc['band_gap_spin_down']} and {workchain.outputs.misc['band_gap_spin_up']}")
+            self.out(f'final_incar.{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}', get_last_input(workchain))
+            self.ctx.all_outputs[f'{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}'] = workchain.outputs.misc
+            self.ctx.conv_interation = 0
+        else:
+            self.ctx.conv_interation += 1
         
         if not f'stage_{self.ctx.stage_idx}' in self.ctx.parameters.get_dict():
             self.ctx.next_stage_exists = False
           
     def results(self):
         """Attach the remaining output results."""
-        self.report(self.ctx.all_outputs)
-        self.out('output_parameters', extract_wrap_results(**self.ctx.all_outputs))
+        self.out('output_parameters', extract_wrap_results(
+            **self.ctx.all_outputs,
+            metadata={
+                'label':'extract_wrap_results', 
+                'description': 'calcfuntion to extract and wrap results of all stages.',
+                'call_link_label':'run_extract_wrap_results'
+            }))
         if self.ctx.is_strc_converged:
-            self.out('relax.structure', self.ctx.current_structure)
-        self.report('VaspMultiStageWorkChain finished successfull!')
-
+            self.out('structure', self.ctx.current_structure)
         self.report('Output Dict <{}>'.format(self.outputs['output_parameters'].pk))
-    
+        self.report('VaspMultiStageWorkChain finished successfull!')
+# EOF
