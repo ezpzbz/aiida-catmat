@@ -14,12 +14,12 @@ stage_0:
   LVHAR: false
   LWAVE: false
   NELM: 200
-  NSW: 400
-  PREC: Accurate
+  NSW: 0
+  PREC: Normal
   SIGMA: 0.05
 stage_1:
   ALGO: Fast
-  EDIFF: 1.0e-06
+  EDIFF: 1.0e-05
   ENCUT: 500
   IBRION: 2
   ISIF: 3
@@ -29,8 +29,8 @@ stage_1:
   LREAL: Auto
   LWAVE: true
   NELM: 200
-  NSW: 99
-  PREC: Accurate
+  NSW: 400
+  PREC: Normal
   SIGMA: 0.05
 stage_2:
   ALGO: Fast
@@ -49,5 +49,5 @@ stage_2:
   LWAVE: false
   NELM: 200
   NSW: 0
-  PREC: Accurate
+  PREC: Normal
   SIGMA: 0.05
