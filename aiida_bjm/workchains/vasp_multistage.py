@@ -301,12 +301,6 @@ class VaspMultiStageWorkChain(WorkChain):
                 'description': 'calcfuntion to get and setup INCAR for all stages.',
                 'call_link_label':'run_setup_protocol'})
 
-        self.ctx.vasp_base.vasp.potential = PotcarData.get_potcars_from_structure(
-            structure=self.inputs.structure,
-            family_name=self.inputs.potential_family.value,
-            mapping=self.inputs.potential_mapping.get_dict()
-        )
-
         # Settings
         if 'settings' in self.inputs:
             settings = AttributeDict(self.inputs.settings.get_dict())
@@ -352,6 +346,11 @@ class VaspMultiStageWorkChain(WorkChain):
 
         self.ctx.vasp_base.vasp.structure = self.ctx.current_structure
 
+        self.ctx.vasp_base.vasp.potential = PotcarData.get_potcars_from_structure(
+            structure=self.ctx.current_structure,
+            family_name=self.inputs.potential_family.value,
+            mapping=self.inputs.potential_mapping.get_dict()
+        )
         # Get relevant INCAR for the current stage.
         self.ctx.vasp_base.vasp.parameters = get_stage_incar( #pylint: disable=unexpected-keyword-arg
             self.ctx.parameters, orm.Str(self.ctx.stage_tag),
