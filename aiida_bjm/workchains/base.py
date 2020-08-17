@@ -33,6 +33,7 @@ def apply_strain_on_structure(retrived_folder):
 
 
 #pylint: disable=inconsistent-return-statements
+#pylint: disable=too-many-public-methods
 class VaspBaseWorkChain(BaseRestartWorkChain):
     """Workchain to run a VASP calculation with automated error handling and restarts."""
 
@@ -83,6 +84,16 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
                 calculation, 'Timeout handler. Adding remote folder as input to use binary restart.'
             )
             self.ctx.inputs.restart_folder = calculation.outputs.remote_folder
+            return ProcessHandlerReport(False)
+
+    @process_handler(priority=300, enabled=True)
+    def handle_lreal(self, calculation):
+        """Handle 'ERROR_INVERSE_ROTATION_MATRIX' exit code"""
+        if 'lreal' in self.ctx.stdout_errors[0]:
+            modifications = Dict(dict={'LREAL': False})
+            self.ctx.inputs.parameters = update_incar(self.ctx.parameters, modifications)
+            action = 'Small supercell. LREAL is set to False'
+            self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
 
     @process_handler(priority=100, enabled=False)
