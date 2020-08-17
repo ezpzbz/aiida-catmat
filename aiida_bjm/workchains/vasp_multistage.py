@@ -400,9 +400,13 @@ class VaspMultiStageWorkChain(WorkChain):
         if self.ctx.stage_calc_types[self.ctx.stage_tag] == 'static':
             converged = workchain.outputs.misc['converged_electronically']
         if self.ctx.stage_calc_types[self.ctx.stage_tag] == 'relaxation':
-            converged = workchain.outputs.misc['converged']
-            self.ctx.is_strc_converged = True
-            self.ctx.current_structure = workchain.outputs.structure
+            if self.ctx.stage_tag == 'stage_0':
+                converged = True
+                self.ctx.current_structure = workchain.outputs.structure
+            else:
+                converged = workchain.outputs.misc['converged']
+                self.ctx.is_strc_converged = True
+                self.ctx.current_structure = workchain.outputs.structure
 
         self.ctx.restart_folder = workchain.outputs.remote_folder
         if converged:
