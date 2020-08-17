@@ -150,8 +150,7 @@ def setup_protocols(protocol_tag, structure, user_incar_settings, hubbard_tag=No
 def set_kpoints(structure, kspacing, kgamma=orm.Bool(False)):
     """Set kpoints mesh from kspacing"""
     kpoints = KpointsData()
-    structure_pmg = structure.get_pymatgen_structure()
-    kpoints.set_cell_from_structure(structure_pmg)
+    kpoints.set_cell_from_structure(structure)
     if kgamma:
         kpoints.set_kpoints_mesh_from_density(kspacing.value)
     else:
@@ -195,11 +194,12 @@ class VaspMultiStageWorkChain(WorkChain):
         super().define(spec)
         spec.expose_inputs(
             VaspBaseWorkChain,
-            include=['vasp.code', 'vasp.kpoints', 'vasp.restart_folder', 'vasp.metadata', 'vasp.potential'],
+            include=['vasp.code', 'vasp.restart_folder', 'vasp.metadata', 'vasp.potential'],
             namespace='vasp_base'
         )
         spec.input('structure', valid_type=(orm.StructureData, orm.CifData))
         spec.input('parameters', valid_type=orm.Dict)
+        spec.input('vasp_base.vasp.kpoints', valid_type=orm.KpointsData, required=False)
         spec.input('kspacing', valid_type=orm.Float, required=False, help='distance to generate kponits mesh')
         spec.input('kgamma', valid_type=orm.Bool, required=False, help='gamma centered kpoints in kspacing case')
         spec.input('magmom', valid_type=orm.List, required=False, help='List of MAGMOM')
@@ -236,6 +236,7 @@ class VaspMultiStageWorkChain(WorkChain):
         spec.exit_code(800, 'ERROR_PROTOCOL_TAG', message='protocol has no stage_0 tag!')
         spec.exit_code(801, 'ERROR_UNSUPPORTED_CALC', message='An unsupported calculation is requested!')
         spec.exit_code(802, 'ERROR_UNRECOVERABLE_FAILURE', message='VaspBaseWorkChain could not handle the failure!')
+        spec.exit_code(803, 'ERROR_KPOINTSDATA_NOT_PROVIDED', message='KpoinstData is not provided in any form.')
         spec.output('structure', valid_type=orm.StructureData, required=False)
         spec.output('output_parameters', valid_type=orm.Dict, required=True)
         spec.output('magmom', valid_type=orm.List, required=False, help='List of MAGMOM')
@@ -268,6 +269,10 @@ class VaspMultiStageWorkChain(WorkChain):
                             'call_link_label':'run_set_kpoints'
                     })
             self.ctx.vasp_base.vasp.kpoints = kpoints
+        elif 'kpoints' in self.inputs.vasp_base.vasp:
+            self.ctx.vasp_base.vasp.kpoints = self.inputs.vasp_base.vasp.kpoints
+        else:
+            return self.exit_codes.ERROR_KPOINTSDATA_NOT_PROVIDED  #pylint: disable=no-member
 
         # MAGMOM
         if 'magmom' in self.inputs:
