@@ -17,6 +17,7 @@ stage_0:
 stage_1:
   ALGO: Fast
   EDIFF: 1.0e-06
+  EDIFFG: -0.01
   ENCUT: 650
   IBRION: 2
   ICHARG: 1
