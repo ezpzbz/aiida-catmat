@@ -17,4 +17,10 @@ cd aiida-bjm
 pip install -e .
 ```
 
+# Usage
+Examples for using workchains are provided in `examples` folder.
 
+# Available WorkChains:
+* `VaspMultiStageWorkChain`: a general purpose and modular multi-stage workchain to run consequent `VASP` calculations based on pre-defined protocols.
+An example graph of three stage (initial static --> relax --> final static) calculations is provided below.
+![three_stage](./misc/example_graph_multistage.png)
