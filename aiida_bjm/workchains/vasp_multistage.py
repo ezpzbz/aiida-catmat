@@ -163,7 +163,7 @@ def get_stage_incar(protocol, stage_tag, prev_incar=None):
     """get INCAR for next stage"""
     next_incar = protocol[stage_tag.value]
     if prev_incar:
-        param_list = ['ALGO', 'ISMEAR', 'SIGMA', 'SYMPREC', 'AMIN', 'ISYM', 'KPAR']
+        param_list = ['ALGO', 'ISMEAR', 'SIGMA', 'SYMPREC', 'AMIN', 'ISYM', 'KPAR', 'LREAL']
         prev_incar = prev_incar.get_dict()
         # Update next incar with params from previous INCAR
         for param in param_list:
