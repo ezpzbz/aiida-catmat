@@ -197,7 +197,9 @@ def get_last_input(workchain):
     for desc in descendants:
         if desc.process_label == 'VaspCalculation':
             calcjobs.append(desc)
-    return calcjobs[-1].inputs.parameters
+    pks = [cjob.pk for cjob in calcjobs]
+    last_index = pks.index(max(pks))
+    return calcjobs[last_index].inputs.parameters
 
 
 #pylint: disable=inconsistent-return-statements
