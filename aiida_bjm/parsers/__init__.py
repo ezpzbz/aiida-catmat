@@ -117,8 +117,12 @@ class VaspBaseParser(Parser):
 
         self.out('misc', Dict(dict=results))
 
-        if structure is not None:
-            self.out('structure', StructureData(pymatgen_structure=structure))
+        if structure:
+            if results['converged_magmoms']:
+                structure.add_spin_by_site(results['converged_magmoms'])
+                self.out('structure', StructureData(pymatgen_structure=structure))
+            else:
+                self.out('structure', StructureData(pymatgen_structure=structure))
 
     def _parse_stdout(self):
         """
@@ -210,8 +214,10 @@ class VaspBaseParser(Parser):
                 magns = _site_magnetization(vrun.final_structure, vout.magnetization)
                 results['complete_site_magnetizations'] = magns[0]
                 results['converged_magmoms'] = magns[1]
-                structure.add_spin_by_site(magns[1])
         else:
             results['errors'] = errors
 
         return results, structure
+
+
+# EOF

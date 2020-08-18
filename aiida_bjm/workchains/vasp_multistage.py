@@ -58,13 +58,15 @@ def get_magmom(structure_pmg):
 
 
 # Get Hubbard parameters if DFT+U is requested
-def get_hubbard(structure, structure_pmg, hubbard_tag):
+def get_hubbard(structure, hubbard_tag):
     """Constructs LDAU part of INCAR"""
     thisdir = os.path.dirname(os.path.abspath(__file__))
     yaml_path = os.path.join(thisdir, '..', 'data', 'hubbard_sets.yaml')
     with open(yaml_path, 'r') as file:
         hubbard_sets = yaml.safe_load(file)
     hubbard_params = hubbard_sets[hubbard_tag]
+
+    structure_pmg = structure.get_pymatgen_structure(add_spin=True)
 
     if any(element.Z > 56 for element in structure_pmg.composition):
         lmaxmix = 6
@@ -92,7 +94,7 @@ def get_hubbard(structure, structure_pmg, hubbard_tag):
     return hubbard_dict
 
 
-@calcfunction
+# @calcfunction
 def get_potcar_mapping(structure, potcar_set_tag):
     """Cosntruct potcar_mapping
     :param structure: the structure object
@@ -110,13 +112,14 @@ def get_potcar_mapping(structure, potcar_set_tag):
     kinds = structure.get_kind_names()
     for kind in kinds:
         kind_no_digit = ''.join(i for i in kind if not i.isdigit())
-        mapping[kind_no_digit] = sel_potcars[kind_no_digit]
+        # mapping[kind_no_digit] = sel_potcars[kind_no_digit]
         mapping[kind] = sel_potcars[kind_no_digit]
-    return orm.Dict(dict=mapping)
+    return mapping
+    # return orm.Dict(dict=mapping)
 
 
 @calcfunction
-def setup_protocols(protocol_tag, structure, user_incar_settings, hubbard_tag=None):
+def setup_protocols(protocol_tag, structure, user_incar_settings):
     """Read stages from provided protocol file, and
     constructs initial INCARs from Materials Project
     sets."""
@@ -132,9 +135,11 @@ def setup_protocols(protocol_tag, structure, user_incar_settings, hubbard_tag=No
     user_incar_settings = user_incar_settings.get_dict()
 
     if user_incar_settings['LDAU']:
-        hubbard = get_hubbard(structure, structure_pmg, hubbard_tag.value)
         for key in protocol.keys():
-            dict_merge(protocol[key], hubbard)
+            protocol[key]['LDAU'] = True
+        # hubbard = get_hubbard(structure, structure_pmg, hubbard_tag.value)
+        # for key in protocol.keys():
+        #     dict_merge(protocol[key], hubbard)
 
     magmom = get_magmom(structure_pmg)
 
@@ -159,9 +164,12 @@ def set_kpoints(structure, kspacing, kgamma=orm.Bool(False)):
 
 
 @calcfunction
-def get_stage_incar(protocol, stage_tag, prev_incar=None):
+def get_stage_incar(protocol, structure, stage_tag, hubbard_tag=None, prev_incar=None):
     """get INCAR for next stage"""
     next_incar = protocol[stage_tag.value]
+    if hubbard_tag:
+        hubbard = get_hubbard(structure, hubbard_tag.value)
+        dict_merge(next_incar, hubbard)
     if prev_incar:
         param_list = ['ALGO', 'ISMEAR', 'SIGMA', 'SYMPREC', 'AMIN', 'ISYM', 'KPAR', 'LREAL']
         prev_incar = prev_incar.get_dict()
@@ -285,24 +293,23 @@ class VaspMultiStageWorkChain(WorkChain):
         if 'magmom' in self.inputs:
             self.ctx.magmom = self.inputs.magmom
 
-        self.inputs.potential_mapping = get_potcar_mapping( #pylint: disable=unexpected-keyword-arg
-            self.ctx.current_structure,
-            self.inputs.potcar_set,
-            metadata={
-                'label':'get_potcar_mapping',
-                'description': 'calcfuntion to construct potcar mapping.',
-                'call_link_label':'run_get_potcar_mapping'
-            })
+        # self.inputs.potential_mapping = get_potcar_mapping( #pylint: disable=unexpected-keyword-arg
+        #     self.ctx.current_structure,
+        #     self.inputs.potcar_set,
+        #     metadata={
+        #         'label':'get_potcar_mapping',
+        #         'description': 'calcfuntion to construct potcar mapping.',
+        #         'call_link_label':'run_get_potcar_mapping'
+        #     })
 
-        hubbard_tag = None
+        self.ctx.hubbard_tag = None
         if self.inputs.parameters['LDAU']:
-            hubbard_tag = self.inputs.hubbard_tag
+            self.ctx.hubbard_tag = self.inputs.hubbard_tag
 
         self.ctx.protocol = setup_protocols( #pylint: disable=unexpected-keyword-arg
             self.inputs.protocol_tag,
             self.ctx.current_structure,
             self.inputs.parameters,
-            hubbard_tag=hubbard_tag,
             metadata={
                 'label':'setup_protocol',
                 'description': 'calcfuntion to get and setup INCAR for all stages.',
@@ -354,14 +361,29 @@ class VaspMultiStageWorkChain(WorkChain):
 
         self.ctx.vasp_base.vasp.structure = self.ctx.current_structure
 
+        # self.inputs.potential_mapping = get_potcar_mapping( #pylint: disable=unexpected-keyword-arg
+        #     self.ctx.current_structure,
+        #     self.inputs.potcar_set,
+        #     metadata={
+        #         'label':'get_potcar_mapping',
+        #         'description': 'calcfuntion to construct potcar mapping.',
+        #         'call_link_label':'run_get_potcar_mapping'
+        #     })
+        self.inputs.potential_mapping = get_potcar_mapping( #pylint: disable=unexpected-keyword-arg
+            self.ctx.current_structure,
+            self.inputs.potcar_set)
+
         self.ctx.vasp_base.vasp.potential = PotcarData.get_potcars_from_structure(
             structure=self.ctx.current_structure,
             family_name=self.inputs.potential_family.value,
-            mapping=self.inputs.potential_mapping.get_dict()
+            # mapping=self.inputs.potential_mapping.get_dict()
+            mapping=self.inputs.potential_mapping
         )
         # Get relevant INCAR for the current stage.
         self.ctx.vasp_base.vasp.parameters = get_stage_incar( #pylint: disable=unexpected-keyword-arg
-            self.ctx.protocol, orm.Str(self.ctx.stage_tag), self.ctx.prev_incar,
+            self.ctx.protocol, self.ctx.current_structure, orm.Str(self.ctx.stage_tag),
+            hubbard_tag=self.ctx.hubbard_tag,
+            prev_incar=self.ctx.prev_incar,
             metadata={
                 'label':'get_stage_incar',
                 'description': 'calcfuntion to get INCAR for current stage',
