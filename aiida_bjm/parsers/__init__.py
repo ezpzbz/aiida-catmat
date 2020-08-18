@@ -159,6 +159,7 @@ class VaspBaseParser(Parser):
                 mag_dict = {}
                 mag_dict[symbol] = magnetization
                 magmoms.append(magnetization['tot'])
+                magmoms = [0 if abs(mag) < 0.1 else mag for mag in magmoms]
                 site_mags.append(mag_dict)
             return site_mags, magmoms
 
@@ -201,14 +202,15 @@ class VaspBaseParser(Parser):
                 results['band_gap_spin_down'] = vrun.complete_dos.get_gap()
             results['errors'] = errors
             results['total_magnetization'] = vout.total_mag
-            if 'LORBIT' in vrun.incar:
-                magns = _site_magnetization(vrun.final_structure, vout.magnetization)
-                results['complete_site_magnetizations'] = magns[0]
-                results['converged_magmoms'] = magns[1]
             if vrun.incar['NSW'] != 0:
                 structure = vrun.final_structure
             else:
                 structure = None
+            if 'LORBIT' in vrun.incar:
+                magns = _site_magnetization(vrun.final_structure, vout.magnetization)
+                results['complete_site_magnetizations'] = magns[0]
+                results['converged_magmoms'] = magns[1]
+                structure.add_spin_by_site(magns[1])
         else:
             results['errors'] = errors
 
