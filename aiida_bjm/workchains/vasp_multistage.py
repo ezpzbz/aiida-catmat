@@ -159,10 +159,17 @@ def set_kpoints(structure, kspacing, kgamma=orm.Bool(False)):
 
 
 @calcfunction
-def get_stage_incar(parameters, stage_tag):
-    """get INCAR for current stage"""
-    incar_params = parameters[stage_tag.value]
-    return orm.Dict(dict=incar_params)
+def get_stage_incar(protocol, stage_tag, prev_incar=None):
+    """get INCAR for next stage"""
+    next_incar = protocol[stage_tag.value]
+    if prev_incar:
+        param_list = ['ALGO', 'ISMEAR', 'SIGMA', 'SYMPREC', 'AMIN', 'ISYM', 'KPAR', 'LREAL']
+        prev_incar = prev_incar.get_dict()
+        # Update next incar with params from previous INCAR
+        for param in param_list:
+            if param in prev_incar:
+                next_incar[param] = prev_incar[param]
+    return orm.Dict(dict=next_incar)
 
 
 @calcfunction
@@ -291,7 +298,7 @@ class VaspMultiStageWorkChain(WorkChain):
         if self.inputs.parameters['LDAU']:
             hubbard_tag = self.inputs.hubbard_tag
 
-        self.ctx.parameters = setup_protocols( #pylint: disable=unexpected-keyword-arg
+        self.ctx.protocol = setup_protocols( #pylint: disable=unexpected-keyword-arg
             self.inputs.protocol_tag,
             self.ctx.current_structure,
             self.inputs.parameters,
@@ -300,12 +307,6 @@ class VaspMultiStageWorkChain(WorkChain):
                 'label':'setup_protocol',
                 'description': 'calcfuntion to get and setup INCAR for all stages.',
                 'call_link_label':'run_setup_protocol'})
-
-        self.ctx.vasp_base.vasp.potential = PotcarData.get_potcars_from_structure(
-            structure=self.inputs.structure,
-            family_name=self.inputs.potential_family.value,
-            mapping=self.inputs.potential_mapping.get_dict()
-        )
 
         # Settings
         if 'settings' in self.inputs:
@@ -317,6 +318,7 @@ class VaspMultiStageWorkChain(WorkChain):
         self.ctx.is_strc_converged = False
         self.ctx.all_outputs = {}
         self.ctx.conv_interation = 0
+        self.ctx.prev_incar = None
 
         # Restart folder
         # It is useful if user wants to start later!
@@ -326,16 +328,16 @@ class VaspMultiStageWorkChain(WorkChain):
             self.ctx.restart_folder = None
 
         self.ctx.stage_idx = 0
-        if f'stage_{self.ctx.stage_idx}' in self.ctx.parameters.get_dict():
+        if f'stage_{self.ctx.stage_idx}' in self.ctx.protocol.get_dict():
             self.ctx.next_stage_exists = True
         else:
             return self.exit_codes.ERROR_PROTOCOL_TAG  #pylint: disable=no-member
 
         # Get the requested calculation types
         self.ctx.stage_calc_types = {}
-        for stage_tag in list(self.ctx.parameters.keys()):
-            if self.ctx.parameters[stage_tag]['IBRION'] in [-1, 1, 2, 3]:
-                if self.ctx.parameters[stage_tag]['IBRION'] == -1:
+        for stage_tag in list(self.ctx.protocol.keys()):
+            if self.ctx.protocol[stage_tag]['IBRION'] in [-1, 1, 2, 3]:
+                if self.ctx.protocol[stage_tag]['IBRION'] == -1:
                     self.ctx.stage_calc_types[stage_tag] = 'static'
                 else:
                     self.ctx.stage_calc_types[stage_tag] = 'relaxation'
@@ -352,9 +354,14 @@ class VaspMultiStageWorkChain(WorkChain):
 
         self.ctx.vasp_base.vasp.structure = self.ctx.current_structure
 
+        self.ctx.vasp_base.vasp.potential = PotcarData.get_potcars_from_structure(
+            structure=self.ctx.current_structure,
+            family_name=self.inputs.potential_family.value,
+            mapping=self.inputs.potential_mapping.get_dict()
+        )
         # Get relevant INCAR for the current stage.
         self.ctx.vasp_base.vasp.parameters = get_stage_incar( #pylint: disable=unexpected-keyword-arg
-            self.ctx.parameters, orm.Str(self.ctx.stage_tag),
+            self.ctx.protocol, orm.Str(self.ctx.stage_tag), self.ctx.prev_incar,
             metadata={
                 'label':'get_stage_incar',
                 'description': 'calcfuntion to get INCAR for current stage',
@@ -394,7 +401,7 @@ class VaspMultiStageWorkChain(WorkChain):
             return self.exit_codes.ERROR_NO_CALLED_WORKCHAIN  # pylint: disable=no-member
 
         if not workchain.is_finished_ok:
-            self.report('The initial static calculation did not finish properly')
+            self.report('Workchain failed with unrecoverable failure!')
             return self.exit_codes.ERROR_UNRECOVERABLE_FAILURE  # pylint: disable=no-member
 
         if self.ctx.stage_calc_types[self.ctx.stage_tag] == 'static':
@@ -414,9 +421,9 @@ class VaspMultiStageWorkChain(WorkChain):
             bg_down = workchain.outputs.misc['band_gap_spin_down']
             bg_up = workchain.outputs.misc['band_gap_spin_up']
             self.report(f'Band Gaps are {bg_down} and {bg_up}')
+            self.ctx.prev_incar = get_last_input(workchain)
             self.out(
-                f'final_incar.{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}',
-                get_last_input(workchain)
+                f'final_incar.{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}', self.ctx.prev_incar
             )
             self.ctx.all_outputs[f'{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}'
                                  ] = workchain.outputs.misc
@@ -424,7 +431,7 @@ class VaspMultiStageWorkChain(WorkChain):
         else:
             self.ctx.conv_interation += 1
 
-        if not f'stage_{self.ctx.stage_idx}' in self.ctx.parameters.get_dict():
+        if not f'stage_{self.ctx.stage_idx}' in self.ctx.protocol.get_dict():
             self.ctx.next_stage_exists = False
 
     def results(self):

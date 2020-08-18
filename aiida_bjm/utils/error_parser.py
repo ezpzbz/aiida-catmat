@@ -36,6 +36,7 @@ STDOUT_ERRS = {
     'point_group': ['Error: point group operation missing'],
     'aliasing': ['WARNING: small aliasing (wrap around) errors must be expected'],
     'aliasing_incar': ['Your FFT grids (NGX,NGY,NGZ) are not sufficient for an accurate'],
+    'lreal': ['Therefore set LREAL=.FALSE. in the  INCAR file']
 }
 
 STDERR_ERRS = {'walltime': ['PBS: job killed: walltime'], 'memory': ['job killed: memory']}

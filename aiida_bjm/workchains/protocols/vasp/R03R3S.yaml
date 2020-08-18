@@ -40,7 +40,7 @@ stage_2:
   LAECHG: true
   LCHARG: true
   LORBIT: 11
-  LREAL: Auto
+  LREAL: false
   LVHAR: true
   LWAVE: false
   NELM: 200
