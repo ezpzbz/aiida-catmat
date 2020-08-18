@@ -117,8 +117,12 @@ class VaspBaseParser(Parser):
 
         self.out('misc', Dict(dict=results))
 
-        if structure is not None:
-            self.out('structure', StructureData(pymatgen_structure=structure))
+        if structure:
+            if results['converged_magmoms']:
+                structure.add_spin_by_site(results['converged_magmoms'])
+                self.out('structure', StructureData(pymatgen_structure=structure))
+            else:
+                self.out('structure', StructureData(pymatgen_structure=structure))
 
     def _parse_stdout(self):
         """
@@ -159,6 +163,7 @@ class VaspBaseParser(Parser):
                 mag_dict = {}
                 mag_dict[symbol] = magnetization
                 magmoms.append(magnetization['tot'])
+                magmoms = [0 if abs(mag) < 0.1 else mag for mag in magmoms]
                 site_mags.append(mag_dict)
             return site_mags, magmoms
 
@@ -201,15 +206,18 @@ class VaspBaseParser(Parser):
                 results['band_gap_spin_down'] = vrun.complete_dos.get_gap()
             results['errors'] = errors
             results['total_magnetization'] = vout.total_mag
-            if 'LORBIT' in vrun.incar:
-                magns = _site_magnetization(vrun.final_structure, vout.magnetization)
-                results['complete_site_magnetizations'] = magns[0]
-                results['converged_magmoms'] = magns[1]
             if vrun.incar['NSW'] != 0:
                 structure = vrun.final_structure
             else:
                 structure = None
+            if 'LORBIT' in vrun.incar:
+                magns = _site_magnetization(vrun.final_structure, vout.magnetization)
+                results['complete_site_magnetizations'] = magns[0]
+                results['converged_magmoms'] = magns[1]
         else:
             results['errors'] = errors
 
         return results, structure
+
+
+# EOF
