@@ -172,6 +172,7 @@ class VaspBaseParser(Parser):
             return site_mags, magmoms
 
         results = {}
+        structure = None
         if vrun:
             results['energy_unit'] = 'eV'
             results['band_gap_unit'] = 'eV'
@@ -212,8 +213,6 @@ class VaspBaseParser(Parser):
             results['total_magnetization'] = vout.total_mag
             if vrun.incar['NSW'] != 0:
                 structure = vrun.final_structure
-            else:
-                structure = None
             if 'LORBIT' in vrun.incar:
                 magns = _site_magnetization(vrun.final_structure, vout.magnetization)
                 results['complete_site_magnetizations'] = magns[0]
