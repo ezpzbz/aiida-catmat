@@ -13,7 +13,7 @@ from aiida import orm
 from aiida.plugins import DataFactory, WorkflowFactory
 from aiida.engine import submit
 
-VaspMultiStageWorkChain = WorkflowFactory('bjm.vasp_multistage')  #pylint: disable=invalid-name
+VaspConvergeWorkChain = WorkflowFactory('bjm.vasp_converge')  #pylint: disable=invalid-name
 StructureData = DataFactory('structure')  #pylint: disable=invalid-name
 KpointsData = DataFactory('array.kpoints')  #pylint: disable=invalid-name
 
@@ -25,7 +25,6 @@ def example_multistage_workchain_li(vasp_code):
         'NPAR': 1,
         'GGA': 'PS',
         'ISPIN': 2,
-        'ENCUT': 500,
         'LDAU': False,
     }
 
@@ -34,18 +33,19 @@ def example_multistage_workchain_li(vasp_code):
     thisdir = os.getcwd()
     strc_path = os.path.join(thisdir, 'files', 'Li_bcc_222.cif')
 
-    builder = VaspMultiStageWorkChain.get_builder()
+    builder = VaspConvergeWorkChain.get_builder()
     builder.vasp_base.vasp.code = vasp_code
     builder.structure = StructureData(ase=read(strc_path))
     builder.parameters = orm.Dict(dict=incar)
-    builder.protocol_tag = orm.Str('R03R3S_test')
+    builder.protocol_tag = orm.Str('S_test')
     #builder.protocol_tag = orm.Str('S0R3S_test')
     builder.potential_family = orm.Str(potential_family)
 
     kpoints = KpointsData()
     kpoints.set_kpoints_mesh([1, 1, 1], offset=[0, 0, 0])
     builder.vasp_base.vasp.kpoints = kpoints
-
+    builder.encut_list = orm.List(list=[200, 300, 400, 500])
+    builder.threshold = orm.Float(3.0)
     builder.vasp_base.vasp.metadata.options.resources = {
         'num_machines': 1,
         'num_cores_per_machine': 1,
