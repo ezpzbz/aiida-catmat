@@ -43,6 +43,7 @@ STDOUT_ERRS = {
     'elf_kpar': ['ELF: KPAR>1 not implemented'],
     'elf_ncl': ['WARNING: ELF not implemented for non collinear case'],
     'rhosyg': ['RHOSYG internal error'],
+    'rsphere': ['RSPHER: internal ERROR'],
     'posmap': ['POSMAP internal error: symmetry equivalent atom not found'],
     'point_group': ['Error: point group operation missing'],
     'aliasing': ['WARNING: small aliasing (wrap around) errors must be expected'],
@@ -105,10 +106,13 @@ class VaspBaseParser(Parser):
         try:
             with self.retrieved.open('vasprun.xml') as handler:
                 vrun = Vasprun(handler.name)
+        except:  #pylint: disable=bare-except
+            vrun = None
+
+        try:
             with self.retrieved.open('OUTCAR') as handler:
                 vout = Outcar(handler.name)
-        except AttributeError:
-            vrun = None
+        except:  #pylint: disable=bare-except
             vout = None
 
         errors = self._parse_stdout()
