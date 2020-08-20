@@ -167,11 +167,14 @@ class VaspBaseParser(Parser):
                 mag_dict = {}
                 mag_dict[symbol] = magnetization
                 magmoms.append(magnetization['tot'])
-                magmoms = [0 if abs(mag) < 0.1 else mag for mag in magmoms]
+                magmoms = [0 if abs(mag) < 0.6 else mag for mag in magmoms]
                 site_mags.append(mag_dict)
             return site_mags, magmoms
 
         results = {}
+        results['converged'] = False
+        results['converged_ionically'] = False
+        results['converged_electronically'] = False
         structure = None
         if vrun:
             results['energy_unit'] = 'eV'
