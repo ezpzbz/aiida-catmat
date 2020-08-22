@@ -107,6 +107,25 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
 
+    @process_handler(priority=310, enabled=True)
+    def handle_rsphere(self, calculation):
+        """Handle 'ERROR_RSPHERE' exit code"""
+        if 'rsphere' in self.ctx.stdout_errors[0]:
+            self.ctx.modifications.update({'LREAL': False})
+            action = 'RSPHERE internal error. LREAL is set to False'
+            self.report_error_handled(calculation, action)
+            return ProcessHandlerReport(False)
+
+    @process_handler(priority=320, enabled=True)
+    def handle_zbrent(self, calculation):
+        """Handle 'ERROR_ZBRENT' exit code"""
+        if 'rsphere' in self.ctx.stdout_errors[0]:
+            ediff = self.ctx.parameters.get_dict().get('EDIFF', 1e-6) * 0.1
+            self.ctx.modifications.update({'EDIFF': ediff})
+            action = f'EDIFF decreased by 10% to {ediff}'
+            self.report_error_handled(calculation, action)
+            return ProcessHandlerReport(False)
+
     @process_handler(priority=100, enabled=False)
     def handle_tetrahedron(self, calculation):
         """Handle 'ERROR_TETRAHEDRON' exit code"""

@@ -43,6 +43,7 @@ STDOUT_ERRS = {
     'elf_kpar': ['ELF: KPAR>1 not implemented'],
     'elf_ncl': ['WARNING: ELF not implemented for non collinear case'],
     'rhosyg': ['RHOSYG internal error'],
+    'rsphere': ['RSPHER: internal ERROR'],
     'posmap': ['POSMAP internal error: symmetry equivalent atom not found'],
     'point_group': ['Error: point group operation missing'],
     'aliasing': ['WARNING: small aliasing (wrap around) errors must be expected'],
@@ -105,10 +106,13 @@ class VaspBaseParser(Parser):
         try:
             with self.retrieved.open('vasprun.xml') as handler:
                 vrun = Vasprun(handler.name)
+        except:  #pylint: disable=bare-except
+            vrun = None
+
+        try:
             with self.retrieved.open('OUTCAR') as handler:
                 vout = Outcar(handler.name)
-        except AttributeError:
-            vrun = None
+        except:  #pylint: disable=bare-except
             vout = None
 
         errors = self._parse_stdout()
@@ -163,11 +167,15 @@ class VaspBaseParser(Parser):
                 mag_dict = {}
                 mag_dict[symbol] = magnetization
                 magmoms.append(magnetization['tot'])
-                magmoms = [0 if abs(mag) < 0.1 else mag for mag in magmoms]
+                magmoms = [0 if abs(mag) < 0.6 else mag for mag in magmoms]
                 site_mags.append(mag_dict)
             return site_mags, magmoms
 
         results = {}
+        results['converged'] = False
+        results['converged_ionically'] = False
+        results['converged_electronically'] = False
+        structure = None
         if vrun:
             results['energy_unit'] = 'eV'
             results['band_gap_unit'] = 'eV'
@@ -208,8 +216,6 @@ class VaspBaseParser(Parser):
             results['total_magnetization'] = vout.total_mag
             if vrun.incar['NSW'] != 0:
                 structure = vrun.final_structure
-            else:
-                structure = None
             if 'LORBIT' in vrun.incar:
                 magns = _site_magnetization(vrun.final_structure, vout.magnetization)
                 results['complete_site_magnetizations'] = magns[0]
