@@ -24,7 +24,7 @@ def example_multistage_workchain_li(vasp_code):
     incar = {
         'NPAR': 1,
         'GGA': 'PS',
-        'ISPIN': 2,
+        'ISPIN': 1,
         'LDAU': False,
     }
 
@@ -35,17 +35,22 @@ def example_multistage_workchain_li(vasp_code):
 
     builder = VaspConvergeWorkChain.get_builder()
     builder.vasp_base.vasp.code = vasp_code
-    builder.structure = StructureData(ase=read(strc_path))
+    structure = StructureData(ase=read(strc_path))
+    builder.structure = structure
     builder.parameters = orm.Dict(dict=incar)
     builder.protocol_tag = orm.Str('S_test')
-    #builder.protocol_tag = orm.Str('S0R3S_test')
     builder.potential_family = orm.Str(potential_family)
 
-    kpoints = KpointsData()
-    kpoints.set_kpoints_mesh([1, 1, 1], offset=[0, 0, 0])
-    builder.vasp_base.vasp.kpoints = kpoints
     builder.encut_list = orm.List(list=[200, 300, 400, 500])
+    kspacing_list = [0.2, 0.3, 0.5]
+    builder.kspacing_list = orm.List(list=kspacing_list)
     builder.threshold = orm.Float(3.0)
+
+    kpoints = KpointsData()
+    kpoints.set_cell_from_structure(structure)
+    kpoints.set_kpoints_mesh_from_density(kspacing_list[-1], offset=[0, 0, 0])
+
+    builder.vasp_base.vasp.kpoints = kpoints
     builder.vasp_base.vasp.metadata.options.resources = {
         'num_machines': 1,
         'num_cores_per_machine': 1,
