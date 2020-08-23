@@ -94,8 +94,15 @@ class VaspConvergeWorkChain(WorkChain):
         spec.expose_inputs(VaspMultiStageWorkChain)
 
         # Define VaspConvergeWorkChain specific inputs
-        spec.input('encut_list', valid_type=orm.List, required=False, help='list of ENCUT for convergence calcs.')
-        spec.input('kspacing_list', valid_type=orm.List, required=False, help='list of kspacing for convergence calcs.')
+        spec.input('encut_list', valid_type=orm.List, required=True, help='list of ENCUT for convergence calcs.')
+        spec.input('kspacing_list', valid_type=orm.List, required=True, help='list of kspacing for convergence calcs.')
+        spec.input(
+            'offset',
+            valid_type=orm.List,
+            default=lambda: orm.List(list=[0, 0, 0]),
+            required=False,
+            help='Offest for kpoints generation'
+        )
         spec.input(
             'threshold',
             valid_type=orm.Float,
@@ -142,6 +149,8 @@ class VaspConvergeWorkChain(WorkChain):
         except ValueError:
             self.ctx.should_converge_kspacing = False
 
+        self.ctx.offset = self.inputs.offset.get_list()
+
         self.ctx.encut_idx = 0
         self.ctx.kspacing_idx = 0
 
@@ -187,7 +196,7 @@ class VaspConvergeWorkChain(WorkChain):
         for kspacing in self.ctx.kspacing_list:
             kpoints = KpointsData()
             kpoints.set_cell_from_structure(self.inputs.structure)
-            kpoints.set_kpoints_mesh_from_density(kspacing, offset=[0, 0, 0])
+            kpoints.set_kpoints_mesh_from_density(kspacing, offset=self.ctx.offset)
             self.ctx.inputs.vasp_base.vasp.kpoints = kpoints
             self.ctx.inputs['metadata']['label'] = f'KSPACING_{int(kspacing*1000)}'
             self.ctx.inputs['metadata']['call_link_label'] = f'run_KSPACING_{int(kspacing*1000)}'

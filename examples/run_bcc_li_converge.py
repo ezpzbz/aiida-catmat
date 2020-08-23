@@ -45,10 +45,12 @@ def example_multistage_workchain_li(vasp_code):
     kspacing_list = [0.2, 0.3, 0.5]
     builder.kspacing_list = orm.List(list=kspacing_list)
     builder.threshold = orm.Float(3.0)
+    offset = orm.List(list=[0, 0, 0])
+    builder.offset = offset
 
     kpoints = KpointsData()
     kpoints.set_cell_from_structure(structure)
-    kpoints.set_kpoints_mesh_from_density(kspacing_list[-1], offset=[0, 0, 0])
+    kpoints.set_kpoints_mesh_from_density(kspacing_list[-1], offset=offset.get_list())
 
     builder.vasp_base.vasp.kpoints = kpoints
     builder.vasp_base.vasp.metadata.options.resources = {
