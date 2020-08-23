@@ -216,9 +216,8 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
     @process_handler(priority=180, enabled=True)
     def handle_edddav(self, calculation):
         """Handle 'ERROR_EDDDAV' exit code"""
-        self.ctx.modifications.update({'ISTART': 0, 'ICHARG': 2})
         if 'edddav' in self.ctx.stdout_errors[0]:
-            self.ctx.modifications.update({'ALGO': 'All'})
+            self.ctx.modifications.update({'ALGO': 'All', 'ISTART': 0, 'ICHARG': 2})
             action = 'ERROR_EDDDAV: Set ALGO to Normal, ISTART to 0 and ICHARG to 2'
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
