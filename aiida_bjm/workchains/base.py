@@ -90,9 +90,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
     @process_handler(priority=1, enabled=True)
     def apply_modifications(self, calculation):
         """Handle 'ERROR_INVERSE_ROTATION_MATRIX' exit code"""
-        if not self.ctx.modifications:
-            self.report('No error found! Good to go!')
-        else:
+        if self.ctx.modifications:
             self.ctx.inputs.parameters = update_incar(self.ctx.parameters, Dict(dict=self.ctx.modifications))
             self.ctx.modifications = {}
             self.report('Applied all modifications for {}<{}>'.format(calculation.process_label, calculation.pk))
@@ -103,7 +101,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
         """Handle 'ERROR_INVERSE_ROTATION_MATRIX' exit code"""
         if 'lreal' in self.ctx.stdout_errors[0]:
             self.ctx.modifications.update({'LREAL': False})
-            action = 'Small supercell. LREAL is set to False'
+            action = 'ERROR_INVERSE_ROTATION_MATRIX: LREAL is set to False'
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
 
@@ -112,7 +110,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
         """Handle 'ERROR_RSPHERE' exit code"""
         if 'rsphere' in self.ctx.stdout_errors[0]:
             self.ctx.modifications.update({'LREAL': False})
-            action = 'RSPHERE internal error. LREAL is set to False'
+            action = 'ERROR_RSPHERE: LREAL is set to False'
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
 
@@ -122,7 +120,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
         if 'rsphere' in self.ctx.stdout_errors[0]:
             ediff = self.ctx.parameters.get_dict().get('EDIFF', 1e-6) * 0.1
             self.ctx.modifications.update({'EDIFF': ediff})
-            action = f'EDIFF decreased by 10% to {ediff}'
+            action = f'ERROR_ZBRENT: EDIFF decreased by 10% to {ediff}'
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
 
@@ -134,11 +132,11 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
                 old_kspacing = self.ctx.inputs.kspacing.value
                 new_kspacing = old_kspacing * 0.8
                 self.ctx.inputs.kspacing = new_kspacing
-                action = f'KSPACING decreased by 80%: <{old_kspacing}> to <{new_kspacing}>'
+                action = f'ERROR_TETRAHEDRON: KSPACING decreased by 80%: <{old_kspacing}> to <{new_kspacing}>'
                 self.report_error_handled(calculation, action)
             else:
                 self.ctx.modifications.update({'ISMEAR': 0, 'SIGMA': 0.05})
-                action = f'Changed to Gaussian smearing with sigma value of 0.05'
+                action = f'ERROR_TETRAHEDRON: Changed to Gaussian smearing with sigma value of 0.05'
                 self.report_error_handled(calculation, action)
                 return ProcessHandlerReport(False)
 
@@ -147,7 +145,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
         """Handle 'ERROR_INVERSE_ROTATION_MATRIX' exit code"""
         if 'inv_rot_mat' in self.ctx.stdout_errors[0]:
             self.ctx.modifications.update({'SYMPREC': 1e-8})
-            action = 'Decreased SYMPREC to 1E-08'
+            action = 'ERROR_INVERSE_ROTATION_MATRIX: Decreased SYMPREC to 1E-08'
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
 
@@ -156,16 +154,16 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
         """Handle 'ERROR_SUBSPACEMATRIX' exit code"""
         if 'subspacematrix' in self.ctx.stdout_errors[0]:
             self.ctx.modifications.update({'LREAL': False})
-            action = 'Set LREAL to FALSE'
+            action = 'ERROR_SUBSPACEMATRIX: Set LREAL to FALSE'
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
 
     @process_handler(priority=130, enabled=True)
     def handle_amin(self, calculation):
-        """Handle 'ERROR_SUBSPACEMATRIX' exit code"""
+        """Handle 'ERROR_AMIN' exit code"""
         if 'amin' in self.ctx.stdout_errors[0]:
             self.ctx.modifications.update({'AMIN': 0.01})
-            action = 'Set AMIN to 0.01'
+            action = 'ERROR_AMIN: Set AMIN to 0.01'
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
 
@@ -174,7 +172,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
         """Handle 'ERROR_PRICEL' exit code"""
         if 'pricel' in self.ctx.stdout_errors[0]:
             self.ctx.modifications.update({'ISYM': 0, 'SYMPREC': 1e-8})
-            action = 'Set ISYM to Zero and Decreased SYMPREC to 1E-08'
+            action = 'ERROR_PRICEL: Set ISYM to Zero and Decreased SYMPREC to 1E-08'
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
 
@@ -184,7 +182,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
         if 'brions' in self.ctx.stdout_errors[0]:
             potim = self.ctx.parameters.get_dict().get('POTIM', 0.5) + 0.1
             self.ctx.modifications.update({'POTIM': potim})
-            action = f'Set POTIM to <{potim}>'
+            action = f'ERROR_BRIONS: Set POTIM to <{potim}>'
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
 
@@ -193,35 +191,33 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
         """Handle 'ERROR_PSSYEVX' exit code"""
         if 'pssyevx' in self.ctx.stdout_errors[0]:
             self.ctx.modifications.update({'ALGO': 'Normal'})
-            action = 'Set ALGO to Normal'
+            action = 'ERROR_PSSYEVX: Set ALGO to Normal'
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
 
     @process_handler(priority=170, enabled=True)
     def handle_eddrmm(self, calculation):
-        """Handle 'ERROR_EDDRMM' exit code
-        TODO: CHGCAR and WAVECAR have to be deleted or not copied.
-        """
+        """Handle 'ERROR_EDDRMM' exit code"""
         if 'eddrmm' in self.ctx.stdout_errors[0]:
+            self.ctx.modifications.update({'ISTART': 0, 'ICHARG': 2})
             if self.ctx.parameters['ALGO'] in ['Fast', 'VeryFast']:
                 self.ctx.modifications.update({'ALGO': 'Normal'})
-                action = 'Set ALGO to Normal'
+                action = 'ERROR_EDDRMM: Set ALGO to Normal, ISTART to 0 and ICHARG to 2'
             else:
                 potim = self.ctx.parameters.get_dict().get('POTIM', 0.5) / 2.0
                 self.ctx.modifications.update({'POTIM': potim})
-                action = f'Set POTIM to <{potim}>'
+                action = f'ERROR_EDDRMM: Set POTIM to <{potim}>, ISTART to 0 and ICHARG to 2'
             self.ctx.inputs.restart_folder = calculation.outputs.remote_folder
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
 
     @process_handler(priority=180, enabled=True)
     def handle_edddav(self, calculation):
-        """Handle 'ERROR_EDDDAV' exit code
-        TODO: CHGCAR ahas to be deleted or not copied.
-        """
+        """Handle 'ERROR_EDDDAV' exit code"""
+        self.ctx.modifications.update({'ISTART': 0, 'ICHARG': 2})
         if 'edddav' in self.ctx.stdout_errors[0]:
-            self.ctx.modifications.update({'ALGO': 'Normal'})
-            action = 'Set ALGO to Normal'
+            self.ctx.modifications.update({'ALGO': 'All'})
+            action = 'ERROR_EDDDAV: Set ALGO to Normal, ISTART to 0 and ICHARG to 2'
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
 
@@ -230,7 +226,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
         """Handle 'ERROR_GRAD_NOT_ORTH' exit code"""
         if 'grad_not_orth' in self.ctx.stdout_errors[0]:
             self.ctx.modifications.update({'ISMEAR': 0, 'SIGMA': 0.05})
-            action = f'Changed to Gaussian smearing with sigma value of 0.05'
+            action = f'ERROR_GRAD_NOT_ORTH: Changed to Gaussian smearing with sigma value of 0.05'
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
 
@@ -240,7 +236,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
         """Handle 'ERROR_ZHEEV' exit code"""
         if 'zheev' in self.ctx.stdout_errors[0]:
             self.ctx.modifications.update({'ALGO': 'Exact'})
-            action = 'Set ALGO to Exact'
+            action = 'ERROR_ZHEEV: Set ALGO to Exact'
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
 
@@ -249,7 +245,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
         """Handle 'ERROR_ELF_KPAR' exit code"""
         if 'elf_kpar' in self.ctx.stdout_errors[0]:
             self.ctx.modifications.update({'KPAR': 1})
-            action = 'Set KPAR to 1'
+            action = 'ERROR_ELF_KPAR: Set KPAR to 1'
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
 
@@ -262,7 +258,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
                 'ISYM': 0,
                 'SYMPREC': 1e-4  # ??
             })
-            action = 'Set ISYM to Zero and Decreased SYMPREC to 1E-04'
+            action = 'ERROR_RHOSYG: Set ISYM to Zero and Decreased SYMPREC to 1E-04'
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
 
@@ -272,7 +268,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
         """Handle 'ERROR_POSMAP' exit code"""
         if 'posmap' in self.ctx.stdout_errors[0]:
             self.ctx.modifications.update({'SYMPREC': 1e-6})
-            action = 'Set SYMPREC to 1E-06'
+            action = 'ERROR_POSMAP: Set SYMPREC to 1E-06'
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
 
@@ -281,7 +277,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
         """Handle 'ERROR_POINT_GROUP' exit code"""
         if 'point_group' in self.ctx.stdout_errors[0]:
             self.ctx.modifications.update({'ISYM': 0})
-            action = 'Set ISYM to Zero!'
+            action = 'ERROR_POINT_GROUP: Set ISYM to Zero!'
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
 
@@ -298,15 +294,15 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
             if nsteps >= 0:
                 potim = self.ctx.parameters.get_dict().get('POTIM', 0.5) / 2.0
                 self.ctx.modifications.update({'ISYM': 0, 'POTIM': potim})
-                action = f'Set ISYM to Zero and POTIM to {potim}!'
+                action = f'ERROR_ZPOTRF: Set ISYM to Zero and POTIM to {potim}!'
             elif self.ctx.parameters.get_dict().get('NSW',
                                                     0) == 0 or self.ctx.parameters.get_dict().get('ISIF',
                                                                                                   0) in range(3):
                 self.ctx.modifications.update({'ISYM': 0})
-                action = 'Set ISYM to Zero!'
+                action = 'ERROR_ZPOTRF: Set ISYM to Zero!'
             else:
                 self.ctx.inputs.structure = apply_strain_on_structure(calculation.outputs.retrieved)
-                action = 'Apply 0.2 strain on the strcuture from CONTCAR'
+                action = 'ERROR_ZPOTRF: Apply 0.2 strain on the strcuture from CONTCAR'
 
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
