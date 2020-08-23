@@ -90,7 +90,9 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
     @process_handler(priority=1, enabled=True)
     def apply_modifications(self, calculation):
         """Handle 'ERROR_INVERSE_ROTATION_MATRIX' exit code"""
-        if self.ctx.modifications:
+        if not self.ctx.modifications:
+            self.report('No error found! Good to go!')
+        else:
             self.ctx.inputs.parameters = update_incar(self.ctx.parameters, Dict(dict=self.ctx.modifications))
             self.ctx.modifications = {}
             self.report('Applied all modifications for {}<{}>'.format(calculation.process_label, calculation.pk))
