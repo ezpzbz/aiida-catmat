@@ -119,7 +119,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
     @process_handler(priority=320, enabled=True)
     def handle_zbrent(self, calculation):
         """Handle 'ERROR_ZBRENT' exit code"""
-        if 'rsphere' in self.ctx.stdout_errors[0]:
+        if 'zbrent' in self.ctx.stdout_errors[0]:
             ediff = self.ctx.parameters.get_dict().get('EDIFF', 1e-6) * 0.1
             self.ctx.modifications.update({'EDIFF': ediff})
             action = f'ERROR_ZBRENT: EDIFF decreased by 10% to {ediff}'
