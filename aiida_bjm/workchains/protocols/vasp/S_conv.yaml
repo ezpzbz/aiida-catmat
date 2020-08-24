@@ -2,7 +2,6 @@ stage_0:
   ALGO: Fast
   EDIFF: 1.0e-07
   IBRION: -1
-  ICHARG: 0
   ISMEAR: 0
   ISPIN: 2
   LAECHG: false

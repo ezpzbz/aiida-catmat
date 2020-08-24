@@ -353,18 +353,18 @@ class VaspMultiStageWorkChain(WorkChain):
             mapping=self.inputs.potential_mapping
         )
         # Get relevant INCAR for the current stage.
-        if self.ctx.stage_iteration == 0:
-            self.ctx.vasp_base.vasp.parameters = get_stage_incar( #pylint: disable=unexpected-keyword-arg
-                self.ctx.protocol, self.ctx.current_structure, orm.Str(self.ctx.stage_tag),
-                hubbard_tag=self.ctx.hubbard_tag,
-                prev_incar=self.ctx.prev_incar,
-                metadata={
-                    'label':'get_stage_incar',
-                    'description': 'calcfuntion to get INCAR for current stage',
-                    'call_link_label':'run_get_stage_incar'
-                })
-        else:
-            self.ctx.vasp_base.vasp.parameters = self.ctx.prev_incar
+        # if self.ctx.stage_iteration == 0:
+        self.ctx.vasp_base.vasp.parameters = get_stage_incar( #pylint: disable=unexpected-keyword-arg
+            self.ctx.protocol, self.ctx.current_structure, orm.Str(self.ctx.stage_tag),
+            hubbard_tag=self.ctx.hubbard_tag,
+            prev_incar=self.ctx.prev_incar,
+            metadata={
+                'label':'get_stage_incar',
+                'description': 'calcfuntion to get INCAR for current stage',
+                'call_link_label':'run_get_stage_incar'
+            })
+        # else:
+        # self.ctx.vasp_base.vasp.parameters = self.ctx.prev_incar
 
         # Restart
         if self.ctx.restart_folder:
@@ -409,8 +409,15 @@ class VaspMultiStageWorkChain(WorkChain):
                 converged = True
             else:
                 converged = workchain.outputs.misc['converged']
+                if converged:
+                    self.ctx.current_structure = workchain.outputs.structure
+                else:
+                    return self.exit_codes.ERROR_UNRECOVERABLE_FAILURE  # pylint: disable=no-member
 
-            self.ctx.current_structure = workchain.outputs.structure
+            # if workchain.outputs.misc['converged']:
+            #     self.ctx.current_structure = workchain.outputs.structure
+            # else:
+            #     return self.exit_codes.ERROR_UNRECOVERABLE_FAILURE  # pylint: disable=no-member
 
         self.ctx.restart_folder = workchain.outputs.remote_folder
         self.ctx.prev_incar = get_last_input(workchain)
