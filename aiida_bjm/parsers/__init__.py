@@ -24,7 +24,7 @@ STDOUT_ERRS = {
     'tetirr': ['Routine TETIRR needs special values'],
     'incorrect_shift': ['Could not get correct shifts'],
     'real_optlay': ['REAL_OPTLAY: internal error', 'REAL_OPT: internal ERROR'],
-    'rspher': ['ERROR RSPHER'],
+    'rspher': ['ERROR RSPHER', 'RSPHER: internal ERROR:'],
     'dentet': ['DENTET'],
     'too_few_bands': ['TOO FEW BANDS'],
     'triple_product': ['ERROR: the triple product of the basis vectors'],
@@ -48,6 +48,7 @@ STDOUT_ERRS = {
     'point_group': ['Error: point group operation missing'],
     'aliasing': ['WARNING: small aliasing (wrap around) errors must be expected'],
     'aliasing_incar': ['Your FFT grids (NGX,NGY,NGZ) are not sufficient for an accurate'],
+    'lreal': ['Therefore set LREAL=.FALSE. in the  INCAR file'],
 }
 
 STDERR_ERRS = {'walltime': ['PBS: job killed: walltime'], 'memory': ['job killed: memory']}
