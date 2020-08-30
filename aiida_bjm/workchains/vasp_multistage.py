@@ -107,7 +107,6 @@ def get_potcar_mapping(structure, potcar_set_tag):
         kind_no_digit = ''.join(i for i in kind if not i.isdigit())
         mapping[kind] = sel_potcars[kind_no_digit]
     return mapping
-    # return orm.Dict(dict=mapping)
 
 
 @calcfunction
@@ -175,7 +174,8 @@ def extract_wrap_results(**all_outputs):
     results_dict = {}
     for key, value in all_outputs.items():
         results_dict[key] = value.get_dict()
-        del results_dict[key]['complete_site_magnetizations']
+        if 'complete_site_magnetizations' in results_dict[key]:
+            del results_dict[key]['complete_site_magnetizations']
     return orm.Dict(dict=results_dict)
 
 
@@ -244,6 +244,7 @@ class VaspMultiStageWorkChain(WorkChain):
         spec.exit_code(801, 'ERROR_UNSUPPORTED_CALC', message='An unsupported calculation is requested!')
         spec.exit_code(802, 'ERROR_UNRECOVERABLE_FAILURE', message='VaspBaseWorkChain could not handle the failure!')
         spec.exit_code(803, 'ERROR_KPOINTSDATA_NOT_PROVIDED', message='KpoinstData is not provided in any form.')
+        spec.exit_code(804, 'ERROR_NON_CONVERGED_GEOMETRY', message='KpoinstData is not provided in any form.')
         spec.output('structure', valid_type=orm.StructureData, required=False)
         spec.output('output_parameters', valid_type=orm.Dict, required=True)
         spec.output('magmom', valid_type=orm.List, required=False, help='List of MAGMOM')
@@ -310,7 +311,7 @@ class VaspMultiStageWorkChain(WorkChain):
         self.ctx.prev_incar = None
 
         # Restart folder
-        # It is useful if user wants to start later!
+        # It is useful if user wants to restart later!
         if 'restart_folder' in self.inputs:
             self.ctx.restart_folder = self.inputs.restart_folder
         else:
@@ -353,7 +354,6 @@ class VaspMultiStageWorkChain(WorkChain):
             mapping=self.inputs.potential_mapping
         )
         # Get relevant INCAR for the current stage.
-        # if self.ctx.stage_iteration == 0:
         self.ctx.vasp_base.vasp.parameters = get_stage_incar( #pylint: disable=unexpected-keyword-arg
             self.ctx.protocol, self.ctx.current_structure, orm.Str(self.ctx.stage_tag),
             hubbard_tag=self.ctx.hubbard_tag,
@@ -363,8 +363,6 @@ class VaspMultiStageWorkChain(WorkChain):
                 'description': 'calcfuntion to get INCAR for current stage',
                 'call_link_label':'run_get_stage_incar'
             })
-        # else:
-        # self.ctx.vasp_base.vasp.parameters = self.ctx.prev_incar
 
         # Restart
         if self.ctx.restart_folder:
@@ -411,13 +409,6 @@ class VaspMultiStageWorkChain(WorkChain):
                 converged = workchain.outputs.misc['converged']
                 if converged:
                     self.ctx.current_structure = workchain.outputs.structure
-                else:
-                    return self.exit_codes.ERROR_UNRECOVERABLE_FAILURE  # pylint: disable=no-member
-
-            # if workchain.outputs.misc['converged']:
-            #     self.ctx.current_structure = workchain.outputs.structure
-            # else:
-            #     return self.exit_codes.ERROR_UNRECOVERABLE_FAILURE  # pylint: disable=no-member
 
         self.ctx.restart_folder = workchain.outputs.remote_folder
         self.ctx.prev_incar = get_last_input(workchain)
@@ -440,6 +431,7 @@ class VaspMultiStageWorkChain(WorkChain):
         if self.ctx.stage_iteration > self.inputs.max_stage_iteration:
             self.report(f'Could not reach the convergence in stage_{self.ctx.stage_idx}! Better check them manually!')
             self.ctx.should_run_next_stage = False
+            return self.exit_codes.ERROR_NON_CONVERGED_GEOMETRY  # pylint: disable=no-member
 
         if not f'stage_{self.ctx.stage_idx}' in self.ctx.protocol.get_dict():
             self.report('All stages are computed!')
@@ -460,8 +452,11 @@ class VaspMultiStageWorkChain(WorkChain):
         )
 
         self.out('structure', self.ctx.current_structure)
-        self.report('Output Dict <{}>'.format(self.outputs['output_parameters'].pk))
-        self.report('VaspMultiStageWorkChain finished successfull!')
+        self.report(
+            'VaspMultiStageWorkChain is successfully finished! Output Dict <{}>'.format(
+                self.outputs['output_parameters'].pk
+            )
+        )
 
 
 # EOF
