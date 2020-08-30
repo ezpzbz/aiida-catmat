@@ -2,8 +2,9 @@
 import io
 import os
 
-from pymatgen.io.vasp import Vasprun, Outcar, Oszicar, Poscar
+from pymatgen.io.vasp import Vasprun
 from pymatgen.electronic_structure.core import Spin
+from parsevasp.outcar import Outcar
 
 from aiida.common import exceptions
 from aiida.parsers import Parser
@@ -106,7 +107,7 @@ class VaspBaseParser(Parser):
 
         try:
             with self.retrieved.open('vasprun.xml') as handler:
-                vrun = Vasprun(handler.name)
+                vrun = Vasprun(handler.name, parse_eigen=False, parse_potcar_file=False, parse_projected_eigen=False)
         except:  #pylint: disable=bare-except
             vrun = None
 
@@ -123,7 +124,7 @@ class VaspBaseParser(Parser):
         self.out('misc', Dict(dict=results))
 
         if structure:
-            if results['converged_magmoms']:
+            if 'converged_magmoms' in results:
                 structure.add_spin_by_site(results['converged_magmoms'])
                 self.out('structure', StructureData(pymatgen_structure=structure))
             else:
@@ -209,16 +210,18 @@ class VaspBaseParser(Parser):
                 results['spin_polarized'] = True
                 results['band_gap_spin_up'] = vrun.complete_dos.get_gap(spin=Spin.up)
                 results['band_gap_spin_down'] = vrun.complete_dos.get_gap(spin=Spin.down)
+                mags = vout.get_magnetization()
+                results['total_magnetization'] = mags['full_cell'][0]
             else:
                 results['spin_polarized'] = False
                 results['band_gap_spin_up'] = vrun.complete_dos.get_gap()
                 results['band_gap_spin_down'] = vrun.complete_dos.get_gap()
             results['errors'] = errors
-            results['total_magnetization'] = vout.total_mag
             if vrun.incar['NSW'] != 0:
                 structure = vrun.final_structure
-            if 'LORBIT' in vrun.incar:
-                magns = _site_magnetization(vrun.final_structure, vout.magnetization)
+            # if 'LORBIT' in vrun.incar:
+            if vrun.incar.get('LORBIT', None) > 10 and vrun.parameters['ISPIN'] == 2:
+                magns = _site_magnetization(vrun.final_structure, list(mags['sphere']['x']['site_moment'].values()))
                 results['complete_site_magnetizations'] = magns[0]
                 results['converged_magmoms'] = magns[1]
         else:
