@@ -97,6 +97,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
         self.ctx.inputs = AttributeDict(self.exposed_inputs(VaspCalculation, 'vasp'))
         self.ctx.parameters = self.ctx.inputs.parameters
         self.ctx.modifications = {}
+        self.ctx.err_count = {}
 
     def report_error_handled(self, calculation, action):
         """Report an action taken for a calculation that has failed.
@@ -151,10 +152,11 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
     @process_handler(priority=320, enabled=True)
     def handle_zbrent(self, calculation):
         """Handle 'ERROR_ZBRENT' exit code"""
-        if 'zbrent' in self.ctx.stdout_errors:
-            ediff = self.ctx.parameters.get_dict().get('EDIFF', 1e-6) * 0.1
+        if ('zbrent' in self.ctx.stdout_errors) and (self.ctx.err_count.get('zbrent', 0)):
+            ediff = self.ctx.parameters.get_dict().get('EDIFF', 1e-6) * 0.01
             self.ctx.modifications.update({'EDIFF': ediff})
-            action = f'ERROR_ZBRENT: EDIFF is decreased by 10% to {ediff}'
+            self.ctx.err_count.update({'zbrent': 1})
+            action = f'ERROR_ZBRENT: EDIFF is decreased to {ediff}'
             self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
 

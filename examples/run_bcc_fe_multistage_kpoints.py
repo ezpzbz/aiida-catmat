@@ -26,19 +26,19 @@ def example_multistage_workchain_li(vasp_code):
         'GGA': 'PS',
         'ISPIN': 2,
         'ENCUT': 500,
-        'LDAU': False,
+        'LDAU': True,
     }
 
     potential_family = 'PBE.54'
 
     thisdir = os.getcwd()
-    strc_path = os.path.join(thisdir, 'files', 'Li_bcc_222.cif')
+    strc_path = os.path.join(thisdir, 'files', 'Fe_bcc_222.cif')
 
     builder = VaspMultiStageWorkChain.get_builder()
     builder.vasp_base.vasp.code = vasp_code
     builder.structure = StructureData(ase=read(strc_path))
     builder.parameters = orm.Dict(dict=incar)
-    builder.protocol_tag = orm.Str('R03R3S_test')
+    builder.protocol_tag = orm.Str('S0R3S_test')
     builder.potential_family = orm.Str(potential_family)
 
     kpoints = KpointsData()
