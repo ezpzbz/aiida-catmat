@@ -29,7 +29,7 @@ def identify_encut_convergence(threshold, **all_encut_outputs):
     results['final_energy_per_atom'] = {}
 
     for key, value in all_encut_outputs.items():
-        encut = key.split('_')[1]
+        encut = int(key.split('_')[1])
         results['final_energy'][encut] = value['stage_0_static']['final_energy']
         results['final_energy_per_atom'][encut] = value['stage_0_static']['final_energy_per_atom']
 
@@ -55,7 +55,7 @@ def identify_kspacing_convergence(threshold, **all_kspacing_outputs):
     results['final_energy_per_atom'] = {}
 
     for key, value in all_kspacing_outputs.items():
-        kspacing = key.split('_')[1]
+        kspacing = float(key.split('_')[1]) / 1000
         results['final_energy'][kspacing] = value['stage_0_static']['final_energy']
         results['final_energy_per_atom'][kspacing] = value['stage_0_static']['final_energy_per_atom']
 
@@ -79,7 +79,7 @@ def return_final_results(encut_results, kpspacing_results):
     """Return a single dict with converged ENCUT and KSPACING"""
     converged_params = {}
     converged_params['ENCUT'] = encut_results.get_dict()['converged_encut']
-    converged_params['KSPACING'] = float(kpspacing_results.get_dict()['converged_kspacing']) / 1000
+    converged_params['KSPACING'] = float(kpspacing_results.get_dict()['converged_kspacing'])
     return orm.Dict(dict=converged_params)
 
 
