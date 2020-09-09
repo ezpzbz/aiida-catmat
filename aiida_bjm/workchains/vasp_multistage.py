@@ -131,8 +131,19 @@ def setup_protocols(protocol_tag, structure, user_incar_settings):
 
     magmom = get_magmom(structure_pmg)
 
+    # Check for LREAL
+    nions = 0
+    comp = structure.get_composition()
+    for nion in comp.values():
+        nions += nion
+    if nions <= 8:
+        lreal = {'LREAL': False}
+    else:
+        lreal = {'LREAL': 'Auto'}
+
     # Update MAGMOM and LDAU section in all stages!
     for key in protocol.keys():
+        dict_merge(protocol[key], lreal)
         dict_merge(protocol[key], magmom)
         dict_merge(protocol[key], user_incar_settings)
 
@@ -165,6 +176,8 @@ def get_stage_incar(protocol, structure, stage_tag, hubbard_tag=None, prev_incar
         for param in param_list:
             if param in prev_incar:
                 next_incar[param] = prev_incar[param]
+        if prev_incar['IBRION'] == -1:
+            next_incar['LREAL'] = False
     return orm.Dict(dict=next_incar)
 
 
@@ -265,7 +278,7 @@ class VaspMultiStageWorkChain(WorkChain):
                         self.ctx.current_structure, self.inputs.kspacing, self.inputs.kgamma,
                         metadata={
                             'label':'set_kpoints',
-                            'description': 'calcfuntion to construct potcar mapping.',
+                            'description': 'calcfuntion to construct kpoints from kspacing',
                             'call_link_label':'run_set_kpoints'
                         })
             else:
@@ -273,7 +286,7 @@ class VaspMultiStageWorkChain(WorkChain):
                     self.ctx.current_structure, self.inpts.kspacing,
                     metadata={
                             'label':'set_kpoints',
-                            'description': 'calcfuntion to construct potcar mapping.',
+                            'description': 'calcfuntion to construct kpoints from kspacing',
                             'call_link_label':'run_set_kpoints'
                     })
             self.ctx.vasp_base.vasp.kpoints = kpoints
@@ -363,6 +376,28 @@ class VaspMultiStageWorkChain(WorkChain):
                 'description': 'calcfuntion to get INCAR for current stage',
                 'call_link_label':'run_get_stage_incar'
             })
+
+        # Check and update input for kspacing
+        if self.ctx.vasp_base.vasp.parameters.get_dict().get('KSPACING', None):
+            self.inputs.kspacing = orm.Float(self.ctx.vasp_base.vasp.parameters.get_dict()['KSPACING'])
+            self.inputs.kgamma = orm.Bool(self.ctx.vasp_base.vasp.parameters.get_dict().get('KSPACING', False))
+            if self.inputs.kgamma:
+                kpoints = set_kpoints( #pylint: disable=unexpected-keyword-arg
+                        self.ctx.current_structure, self.inputs.kspacing, self.inputs.kgamma,
+                        metadata={
+                            'label':'set_kpoints',
+                            'description': 'calcfuntion to construct kpoints from kspacing',
+                            'call_link_label':'run_set_kpoints'
+                        })
+            else:
+                kpoints = set_kpoints( #pylint: disable=unexpected-keyword-arg
+                    self.ctx.current_structure, self.inpts.kspacing,
+                    metadata={
+                            'label':'set_kpoints',
+                            'description': 'calcfuntion to construct kpoints from kspacing',
+                            'call_link_label':'run_set_kpoints'
+                    })
+            self.ctx.vasp_base.vasp.kpoints = kpoints
 
         # Restart
         if self.ctx.restart_folder:
