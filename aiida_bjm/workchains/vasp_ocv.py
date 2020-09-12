@@ -2,6 +2,7 @@
 It wraps VaspMultiStageWorkChain to perform two ccnsecutive
 calculation for calculation of open circuit voltage.
 """
+from pymatgen import Element
 
 from aiida import orm
 from aiida.common import AttributeDict
@@ -17,9 +18,12 @@ StructureData = DataFactory('structure')  #pylint: disable=invalid-name
 @calcfunction
 def update_structure(structure, anode):
     """Update structure by removing ions (Li/Na/...)"""
-    el_to_remove = list(anode.get_dict().keys())
     strc_pmg = structure.get_pymatgen_structure(add_spin=True)
-    strc_pmg.remove_species(el_to_remove)
+    species = strc_pmg.species
+    el_to_remove = list(anode.get_dict().keys())
+    for sp in species:  #pylint: disable=invalid-name
+        if sp.element == Element(el_to_remove[0]):
+            strc_pmg.remove_species([sp])
     return StructureData(pymatgen_structure=strc_pmg)
 
 
@@ -76,7 +80,7 @@ class VaspOcvWorkChain(WorkChain):
         )
         # Expose outputs
         spec.expose_outputs(VaspMultiStageWorkChain)
-        spec.output_namespace('ocv_results', valid_type=orm.Dict, required=False, dynamic=True)
+        spec.output('ocv_results', valid_type=orm.Dict, required=False, help='output dictionary with OCV results')
 
     def initialize(self):
         """Initialize inputs and settings"""
