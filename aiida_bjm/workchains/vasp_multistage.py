@@ -87,7 +87,6 @@ def get_hubbard(structure, hubbard_tag):
     return hubbard_dict
 
 
-# @calcfunction
 def get_potcar_mapping(structure, potcar_set_tag):
     """Cosntruct potcar_mapping
     :param structure: the structure object
@@ -107,6 +106,28 @@ def get_potcar_mapping(structure, potcar_set_tag):
         kind_no_digit = ''.join(i for i in kind if not i.isdigit())
         mapping[kind] = sel_potcars[kind_no_digit]
     return mapping
+
+
+def should_sort_structure(structure):
+    """Checks if structure needs to be sorted"""
+    import functools  #pylint: disable=import-outside-toplevel
+    structure_pmg = structure.get_pymatgen_structure(add_spin=True)
+    structure_pmg_sorted = structure.get_pymatgen_structure(add_spin=True)
+    structure_pmg_sorted.sort()
+    species = structure_pmg.species
+    species_sorted = structure_pmg_sorted.species
+    spin = []
+    for s in species:  #pylint: disable=invalid-name
+        spin.append(getattr(s, 'spin', 0))
+    spin_sorted = []
+    for s in species_sorted:  #pylint: disable=invalid-name
+        spin_sorted.append(getattr(s, 'spin', 0))
+    stat = []
+    if functools.reduce(lambda i, j: i and j, map(lambda m, k: m == k, spin, spin_sorted), True):
+        stat.append(False)
+    else:
+        stat.append(True)
+    return stat
 
 
 @calcfunction
@@ -160,6 +181,14 @@ def set_kpoints(structure, kspacing, kgamma=orm.Bool(False)):
     else:
         kpoints.set_kpoints_mesh_from_density(kspacing.value, offset=[0.5, 0.5, 0.5])
     return kpoints
+
+
+@calcfunction
+def sort_structure(structure):
+    """Apply structure sorting in case it is called"""
+    structure_pmg = structure.get_pymatgen_structure(add_spin=True)
+    structure_pmg.sort()
+    return orm.StructureData(pymatgen_structure=structure_pmg)
 
 
 @calcfunction
@@ -366,6 +395,15 @@ class VaspMultiStageWorkChain(WorkChain):
             family_name=self.inputs.potential_family.value,
             mapping=self.inputs.potential_mapping
         )
+
+        # Check if structure needs to be sorted and do it.
+        if should_sort_structure(self.ctx.current_structure):
+            self.ctx.current_structure = sort_structure(self.ctx.current_structure, metadata={ #pylint: disable=unexpected-keyword-arg
+                'label':'sort_structure',
+                'description': 'calcfuntion to sort structure',
+                'call_link_label':'run_sort_structure'
+            })
+
         # Get relevant INCAR for the current stage.
         self.ctx.vasp_base.vasp.parameters = get_stage_incar( #pylint: disable=unexpected-keyword-arg
             self.ctx.protocol, self.ctx.current_structure, orm.Str(self.ctx.stage_tag),
