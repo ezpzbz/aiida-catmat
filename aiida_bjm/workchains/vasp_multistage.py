@@ -127,7 +127,7 @@ def should_sort_structure(structure):
         stat.append(False)
     else:
         stat.append(True)
-    return stat
+    return all(stat)
 
 
 @calcfunction
@@ -398,11 +398,13 @@ class VaspMultiStageWorkChain(WorkChain):
 
         # Check if structure needs to be sorted and do it.
         if should_sort_structure(self.ctx.current_structure):
-            self.ctx.current_structure = sort_structure(self.ctx.current_structure, metadata={ #pylint: disable=unexpected-keyword-arg
+            sorted_strucure = sort_structure(self.ctx.current_structure, metadata={ #pylint: disable=unexpected-keyword-arg
                 'label':'sort_structure',
                 'description': 'calcfuntion to sort structure',
                 'call_link_label':'run_sort_structure'
             })
+            self.ctx.current_structure = sorted_strucure
+            self.ctx.restart_folder = None
 
         # Get relevant INCAR for the current stage.
         self.ctx.vasp_base.vasp.parameters = get_stage_incar( #pylint: disable=unexpected-keyword-arg
