@@ -393,7 +393,7 @@ class VaspMultiStageWorkChain(WorkChain):
             })
             self.ctx.current_structure = sorted_strucure
             self.ctx.restart_folder = None
-            self.ctx.vasp_base.vasp.restart_folder = None
+            del self.ctx['vasp_base']['vasp']['restart_folder']
 
         self.ctx.vasp_base.vasp.structure = self.ctx.current_structure
 
