@@ -135,7 +135,7 @@ def setup_protocols(protocol_tag, structure, user_incar_settings):
     """Read stages from provided protocol file, and
     constructs initial INCARs from Materials Project
     sets."""
-    structure_pmg = structure.get_pymatgen_structure(add_spin=True)
+    # structure_pmg = structure.get_pymatgen_structure(add_spin=True)
 
     # Get user-defined stages and alternative settings from yaml file
     thisdir = os.path.dirname(os.path.abspath(__file__))
@@ -150,7 +150,7 @@ def setup_protocols(protocol_tag, structure, user_incar_settings):
         for key in protocol.keys():
             protocol[key]['LDAU'] = True
 
-    magmom = get_magmom(structure_pmg)
+    # magmom = get_magmom(structure_pmg)
 
     # Check for LREAL
     nions = 0
@@ -165,7 +165,7 @@ def setup_protocols(protocol_tag, structure, user_incar_settings):
     # Update MAGMOM and LDAU section in all stages!
     for key in protocol.keys():
         dict_merge(protocol[key], lreal)
-        dict_merge(protocol[key], magmom)
+        # dict_merge(protocol[key], magmom)
         dict_merge(protocol[key], user_incar_settings)
 
     return orm.Dict(dict=protocol)
@@ -195,6 +195,9 @@ def sort_structure(structure):
 def get_stage_incar(protocol, structure, stage_tag, hubbard_tag=None, prev_incar=None):
     """get INCAR for next stage"""
     next_incar = protocol[stage_tag.value]
+    structure_pmg = structure.get_pymatgen_structure(add_spin=True)
+    magmom = get_magmom(structure_pmg)
+    dict_merge(next_incar, magmom)
     if hubbard_tag:
         hubbard = get_hubbard(structure, hubbard_tag.value)
         dict_merge(next_incar, hubbard)
