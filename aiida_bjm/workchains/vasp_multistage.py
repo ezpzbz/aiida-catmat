@@ -384,6 +384,17 @@ class VaspMultiStageWorkChain(WorkChain):
         """Prepares and submits static calculations as long as they are needed."""
         self.ctx.stage_tag = f'stage_{self.ctx.stage_idx}'
 
+        # Check if structure needs to be sorted and do it.
+        if should_sort_structure(self.ctx.current_structure):
+            sorted_strucure = sort_structure(self.ctx.current_structure, metadata={ #pylint: disable=unexpected-keyword-arg
+                'label':'sort_structure',
+                'description': 'calcfuntion to sort structure',
+                'call_link_label':'run_sort_structure'
+            })
+            self.ctx.current_structure = sorted_strucure
+            self.ctx.restart_folder = None
+            self.ctx.vasp_base.vasp.restart_folder = None
+
         self.ctx.vasp_base.vasp.structure = self.ctx.current_structure
 
         self.inputs.potential_mapping = get_potcar_mapping( #pylint: disable=unexpected-keyword-arg
@@ -395,16 +406,6 @@ class VaspMultiStageWorkChain(WorkChain):
             family_name=self.inputs.potential_family.value,
             mapping=self.inputs.potential_mapping
         )
-
-        # Check if structure needs to be sorted and do it.
-        if should_sort_structure(self.ctx.current_structure):
-            sorted_strucure = sort_structure(self.ctx.current_structure, metadata={ #pylint: disable=unexpected-keyword-arg
-                'label':'sort_structure',
-                'description': 'calcfuntion to sort structure',
-                'call_link_label':'run_sort_structure'
-            })
-            self.ctx.current_structure = sorted_strucure
-            self.ctx.restart_folder = None
 
         # Get relevant INCAR for the current stage.
         self.ctx.vasp_base.vasp.parameters = get_stage_incar( #pylint: disable=unexpected-keyword-arg
