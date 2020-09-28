@@ -145,8 +145,8 @@ class VaspCatMatWorkChain(WorkChain):
         self.ctx.should_run_discharged = True
         if 'discharged_calculated_data' in self.inputs:
             if 'discharged_relaxed_structure' in self.inputs:
-                self.ctx.discharged_out = self.inputs.discharged_calculated_data
-                self.ctx.discharged_strc = self.inputs.discharged_relaxed_structure
+                self.ctx.discharged_calculated_data = self.inputs.discharged_calculated_data
+                self.ctx.discharged_relaxed_structure = self.inputs.discharged_relaxed_structure
                 self.ctx.should_run_discharged = False
         return self.ctx.should_run_discharged
 
