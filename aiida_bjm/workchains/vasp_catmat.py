@@ -28,8 +28,8 @@ def update_structure(structure, anode):
 
 
 @calcfunction
-def calculate_ocv(discharged, charged, discharged_structure, charged_structure, anode):  #pylint: disable=too-many-locals
-    """Calculate OCV"""
+def calculate_cathode_props(discharged, charged, discharged_structure, charged_structure, anode):  #pylint: disable=too-many-locals
+    """Calculate properties of cathode"""
     F_CONSTANT = 96485.3  #C/mol #pylint: disable=invalid-name
 
     def _get_stg_idx(item):
@@ -182,7 +182,7 @@ class VaspCatMatWorkChain(WorkChain):
             self.ctx.charged_relaxed_structure = self.ctx.wc_charged.outputs.structure
         self.out(
             'ocv_results',
-            calculate_ocv(
+            calculate_cathode_props(
                 self.ctx.discharged_calculated_data, self.ctx.charged_calculated_data,
                 self.ctx.discharged_relaxed_structures, self.ctx.scharged_relaxed_structures, self.inputs.anode
             )
