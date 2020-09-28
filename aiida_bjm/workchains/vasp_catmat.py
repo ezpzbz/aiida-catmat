@@ -185,7 +185,7 @@ class VaspCatMatWorkChain(WorkChain):
             'ocv_results',
             calculate_cathode_props(
                 self.ctx.discharged_calculated_data, self.ctx.charged_calculated_data,
-                self.ctx.discharged_relaxed_structures, self.ctx.scharged_relaxed_structures, self.inputs.anode
+                self.ctx.discharged_relaxed_structure, self.ctx.charged_relaxed_structure, self.inputs.anode
             )
         )
         self.report('VaspCatMatWorkChain FInished Successfully!')
