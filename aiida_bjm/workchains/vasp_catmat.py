@@ -210,7 +210,9 @@ class VaspCatMatWorkChain(WorkChain):
                 }
             )
         )
-        self.report('VaspCatMatWorkChain FInished Successfully!')
+        self.report(
+            'VaspCatMatWorkChain is successfully finished! Output Dict <{}>'.format(self.outputs['cathode_props'].pk)
+        )
 
 
 # EOF
