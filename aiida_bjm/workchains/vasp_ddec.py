@@ -58,6 +58,7 @@ class VaspDdecWorkChain(WorkChain):
 
     def run_vasp(self):
         """Submit VaspMultiStageWorkChain using S_ddec protocol"""
+        self.ctx.vasp_inputs['protocol_tag'] = 'S_ddec'
         self.ctx.vasp_inputs['metadata']['label'] = 'vasp_static_for_ddec'
         self.ctx.vasp_inputs['metadata']['call_link_label'] = 'run_vasp_static_for_ddec'
         running = self.submit(VaspMultiStageWorkChain, **self.ctx.vasp_inputs)
