@@ -1,4 +1,4 @@
-"""VaspDdecWorkChain
+"""VaspMultiStageDdecWorkChain
 It wraps VaspMultiStageWorkChain to a single point calculation and
 consecuently calculates the atomic charges and spin moments using DDEC method.
 """
@@ -24,20 +24,16 @@ def get_remote_folder(wcnode):
     return cj_sorted[-1][1].outputs.remote_folder
 
 
-class VaspDdecWorkChain(WorkChain):
+class VaspMultiStageDdecWorkChain(WorkChain):
     """VASP+DDEC WorkChain"""
 
     @classmethod
     def define(cls, spec):
         super().define(spec)
 
-        # Expose VaspMultiStageWorkChain inputs
+        # Expose inputs
         spec.expose_inputs(VaspMultiStageWorkChain)
         spec.expose_inputs(DdecCalculation, namespace='ddec')
-
-        # Define VaspDdecWorkChain specific inputs
-
-        # Exit codes
 
         # Define outline
         spec.outline(
@@ -54,20 +50,18 @@ class VaspDdecWorkChain(WorkChain):
         # Setup inputs
         self.ctx.vasp_inputs = AttributeDict(self.exposed_inputs(VaspMultiStageWorkChain))
         self.ctx.ddec_inputs = AttributeDict(self.exposed_inputs(DdecCalculation, 'ddec'))
-        self.ctx.ddec_inputs['charge_density_folder'] = {}
 
     def run_vasp(self):
-        """Submit VaspMultiStageWorkChain using S_ddec protocol"""
-        self.ctx.vasp_inputs['protocol_tag'] = 'S_ddec'
-        self.ctx.vasp_inputs['metadata']['label'] = 'vasp_static_for_ddec'
-        self.ctx.vasp_inputs['metadata']['call_link_label'] = 'run_vasp_static_for_ddec'
+        """Submit VaspMultiStageWorkChain"""
+        self.ctx.vasp_inputs['metadata']['label'] = 'vasp_multistage'
+        self.ctx.vasp_inputs['metadata']['call_link_label'] = 'run_vasp_multistage'
         running = self.submit(VaspMultiStageWorkChain, **self.ctx.vasp_inputs)
         self.report(f'Submitted VaspMultiStageWorkChain <pk>:{running.pk}!')
         return ToContext(vasp=running)
 
     def run_ddec(self):
         """Submit DdecCalculation"""
-        self.ctx.ddec_inputs['charge_density_folder']['vasp'] = get_remote_folder(self.ctx.vasp)
+        self.ctx.ddec_inputs['charge_density_folder'] = get_remote_folder(self.ctx.vasp)
         self.ctx.ddec_inputs['metadata']['label'] = 'ddec_calculation'
         self.ctx.ddec_inputs['metadata']['call_link_label'] = 'run_ddec_calculation'
         running = self.submit(DdecCalculation, self.ctx.ddec_inputs)
@@ -78,9 +72,7 @@ class VaspDdecWorkChain(WorkChain):
         """Handle results"""
         self.out_many(self.exposed_outputs(self.ctx.vasp, VaspMultiStageWorkChain))
         self.out_many(self.exposed_outputs(self.ctx.ddec_calc, DdecCalculation))
-        self.report('DDEC charges computed: CifData<{}>'.format(self.outputs['structure_ddec'].pk))
-        self.report('DDEC spin moments computed: CifData<{}>'.format(self.outputs['structure_ddec_spin'].pk))
-        self.report('VaspDdecWorkChain is successfully finished!')
+        self.report('VaspMultiStageDdecWorkChain is successfully finished!')
 
 
 # EOF

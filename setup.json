@@ -25,7 +25,7 @@
             "bjm.vasp_multistage = aiida_bjm.workchains:VaspMultiStageWorkChain",
             "bjm.vasp_converge = aiida_bjm.workchains:VaspConvergeWorkChain",
             "bjm.vasp_catmat = aiida_bjm.workchains:VaspCatMatWorkChain",
-            "bjm.vasp_ddec = aiida_bjm.workchains:VaspDdecWorkChain"
+            "bjm.vasp_multistage_ddec = aiida_bjm.workchains:VaspMultiStageDdecWorkChain"
         ]
     },
     "data_files": [
