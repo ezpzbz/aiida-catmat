@@ -64,7 +64,7 @@ class VaspMultiStageDdecWorkChain(WorkChain):
         self.ctx.ddec_inputs['charge_density_folder'] = get_remote_folder(self.ctx.vasp)
         self.ctx.ddec_inputs['metadata']['label'] = 'ddec_calculation'
         self.ctx.ddec_inputs['metadata']['call_link_label'] = 'run_ddec_calculation'
-        running = self.submit(DdecCalculation, self.ctx.ddec_inputs)
+        running = self.submit(DdecCalculation, **self.ctx.ddec_inputs)
         self.report(f'Submitted DDEC calculation <pk>:{running.pk}!')
         return ToContext(ddec_calc=running)
 
