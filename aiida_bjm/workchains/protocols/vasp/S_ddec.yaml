@@ -11,9 +11,10 @@ stage_0:
   LCHARG: true
   LORBIT: 11
   LREAL: false
-  LVHAR: true
+  LVHAR: false
   LWAVE: false
   NELM: 200
   NSW: 0
   PREC: Accurate
   SIGMA: 0.05
+  KSPACING: 0.20
