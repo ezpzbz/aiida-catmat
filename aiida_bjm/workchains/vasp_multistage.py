@@ -462,7 +462,17 @@ class VaspMultiStageWorkChain(WorkChain):
         self.ctx.vasp_base['metadata']['call_link_label'] = self.ctx.vasp_base.vasp['metadata']['call_link_label']
 
         # Activate ionic convergence handler if it is a relaxation stage.
+        # We need to know if it is a production relax stage.
+        prod_relax = False
         if self.ctx.stage_calc_types[self.ctx.stage_tag] == 'relaxation':
+            if self.ctx.stage_tag != 'stage_0':
+                prod_relax = True
+            # In case someone just wants to run a single stage relax calculations.
+            elif (self.ctx.stage_tag == 'stage_0' and len(list(self.ctx.protocol.get_dict().keys())) == 1):
+                prod_relax = True
+
+        # if ((self.ctx.stage_calc_types[self.ctx.stage_tag] == 'relaxation') and (self.ctx.stage_tag != 'stage_0')):
+        if prod_relax:
             self.ctx.vasp_base.handler_overrides = orm.Dict(dict={'handle_ionic_convergence': True})
             self.report('Switching on the ionic convergence handler')
 
