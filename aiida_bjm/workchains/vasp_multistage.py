@@ -486,8 +486,7 @@ class VaspMultiStageWorkChain(WorkChain):
                 converged = True
             else:
                 converged = workchain.outputs.misc['converged']
-                if converged:
-                    self.ctx.current_structure = workchain.outputs.structure
+                self.ctx.current_structure = workchain.outputs.structure
 
         self.ctx.restart_folder = workchain.outputs.remote_folder
         self.ctx.prev_incar = get_last_input(workchain)
