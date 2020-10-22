@@ -245,7 +245,10 @@ class VaspMultiStageWorkChain(WorkChain):
         super().define(spec)
         spec.expose_inputs(
             VaspBaseWorkChain,
-            include=['vasp.code', 'vasp.restart_folder', 'vasp.metadata', 'vasp.potential'],
+            include=[
+                'clean_workdir', 'handler_overrides', 'max_iterations', 'vasp.code', 'vasp.restart_folder',
+                'vasp.metadata', 'vasp.potential'
+            ],
             namespace='vasp_base'
         )
         spec.input('structure', valid_type=(orm.StructureData, orm.CifData))
@@ -352,7 +355,7 @@ class VaspMultiStageWorkChain(WorkChain):
             self.inputs.settings = settings
         self.ctx.vasp_base.vasp.settings = self.inputs.settings
         self.ctx.all_outputs = {}
-        self.ctx.stage_iteration = 0
+        # self.ctx.stage_iteration = 0
         self.ctx.prev_incar = None
 
         # Restart folder
@@ -458,6 +461,11 @@ class VaspMultiStageWorkChain(WorkChain):
         self.ctx.vasp_base['metadata']['label'] = self.ctx.vasp_base.vasp['metadata']['label']
         self.ctx.vasp_base['metadata']['call_link_label'] = self.ctx.vasp_base.vasp['metadata']['call_link_label']
 
+        # Activate ionic convergence handler if it is a relaxation stage.
+        if self.ctx.stage_calc_types[self.ctx.stage_tag] == 'relaxation':
+            self.ctx.vasp_base.handler_overrides = orm.Dict(dict={'handle_ionic_convergence': True})
+            self.report('Switching on the ionic convergence handler')
+
         inputs = prepare_process_inputs(VaspBaseWorkChain, self.ctx.vasp_base)
         running = self.submit(VaspBaseWorkChain, **inputs)
         tag = self.ctx.stage_tag
@@ -479,37 +487,54 @@ class VaspMultiStageWorkChain(WorkChain):
             self.report('Workchain failed with unrecoverable failure!')
             return self.exit_codes.ERROR_UNRECOVERABLE_FAILURE  # pylint: disable=no-member
 
-        if self.ctx.stage_calc_types[self.ctx.stage_tag] == 'static':
-            converged = workchain.outputs.misc['converged_electronically']
-        if self.ctx.stage_calc_types[self.ctx.stage_tag] == 'relaxation':
-            if self.ctx.stage_tag == 'stage_0':
-                converged = True
-            else:
-                converged = workchain.outputs.misc['converged']
-                self.ctx.current_structure = workchain.outputs.structure
-
+        # NEW
         self.ctx.restart_folder = workchain.outputs.remote_folder
         self.ctx.prev_incar = get_last_input(workchain)
 
-        if converged:
-            self.ctx.stage_idx += 1
-            bg_down = workchain.outputs.misc['band_gap_spin_down']
-            bg_up = workchain.outputs.misc['band_gap_spin_up']
-            self.report(f'Band Gaps are {bg_down} and {bg_up}')
-            self.out(
-                f'final_incar.{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}', self.ctx.prev_incar
-            )
-            self.ctx.all_outputs[f'{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}'
-                                 ] = workchain.outputs.misc
-            self.ctx.stage_iteration = 0
-        else:
-            self.ctx.stage_iteration += 1
-            self.report(f'{self.ctx.stage_tag} is not converged. Resubmitting iteration_{self.ctx.stage_iteration}')
+        bg_down = workchain.outputs.misc['band_gap_spin_down']
+        bg_up = workchain.outputs.misc['band_gap_spin_up']
+        self.report(f'Band Gaps are {bg_down} and {bg_up}')
+        self.out(
+            f'final_incar.{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}', self.ctx.prev_incar
+        )
+        self.ctx.all_outputs[f'{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}'
+                             ] = workchain.outputs.misc
+        # NEW
 
-        if self.ctx.stage_iteration > self.inputs.max_stage_iteration:
-            self.report(f'Could not reach the convergence in stage_{self.ctx.stage_idx}! Better check them manually!')
-            self.ctx.should_run_next_stage = False
-            return self.exit_codes.ERROR_NON_CONVERGED_GEOMETRY  # pylint: disable=no-member
+        # OLD
+        # if self.ctx.stage_calc_types[self.ctx.stage_tag] == 'static':
+        #     converged = workchain.outputs.misc['converged_electronically']
+        # if self.ctx.stage_calc_types[self.ctx.stage_tag] == 'relaxation':
+        #     if self.ctx.stage_tag == 'stage_0':
+        #         converged = True
+        #     else:
+        #         converged = workchain.outputs.misc['converged']
+        #         self.ctx.current_structure = workchain.outputs.structure
+
+        # self.ctx.restart_folder = workchain.outputs.remote_folder
+        # self.ctx.prev_incar = get_last_input(workchain)
+
+        # if converged:
+        #     self.ctx.stage_idx += 1
+        #     bg_down = workchain.outputs.misc['band_gap_spin_down']
+        #     bg_up = workchain.outputs.misc['band_gap_spin_up']
+        #     self.report(f'Band Gaps are {bg_down} and {bg_up}')
+        #     self.out(
+        #         f'final_incar.{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}',
+        #           self.ctx.prev_incar
+        #     )
+        #     self.ctx.all_outputs[f'{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}'
+        #                          ] = workchain.outputs.misc
+        # self.ctx.stage_iteration = 0
+        # else:
+        #     self.ctx.stage_iteration += 1
+        #     self.report(f'{self.ctx.stage_tag} is not converged. Resubmitting iteration_{self.ctx.stage_iteration}')
+
+        # if self.ctx.stage_iteration > self.inputs.max_stage_iteration:
+        #     self.report(f'Could not reach the convergence in stage_{self.ctx.stage_idx}! Better check them manually!')
+        #     self.ctx.should_run_next_stage = False
+        #     return self.exit_codes.ERROR_NON_CONVERGED_GEOMETRY  # pylint: disable=no-member
+        # OLD
 
         if not f'stage_{self.ctx.stage_idx}' in self.ctx.protocol.get_dict():
             self.report('All stages are computed!')
