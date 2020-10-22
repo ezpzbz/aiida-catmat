@@ -493,23 +493,23 @@ class VaspMultiStageWorkChain(WorkChain):
             )
             return self.exit_codes.ERROR_NO_CALLED_WORKCHAIN  # pylint: disable=no-member
 
-        if not workchain.is_finished_ok:
+        if workchain.is_finished_ok:
+            # NEW
+            self.ctx.stage_idx += 1
+            self.ctx.restart_folder = workchain.outputs.remote_folder
+            self.ctx.prev_incar = get_last_input(workchain)
+
+            bg_down = workchain.outputs.misc['band_gap_spin_down']
+            bg_up = workchain.outputs.misc['band_gap_spin_up']
+            self.report(f'Band Gaps are {bg_down} and {bg_up}')
+            self.out(
+                f'final_incar.{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}', self.ctx.prev_incar
+            )
+            self.ctx.all_outputs[f'{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}'
+                                 ] = workchain.outputs.misc
+        else:
             self.report('Workchain failed with unrecoverable failure!')
             return self.exit_codes.ERROR_UNRECOVERABLE_FAILURE  # pylint: disable=no-member
-
-        # NEW
-        self.ctx.restart_folder = workchain.outputs.remote_folder
-        self.ctx.prev_incar = get_last_input(workchain)
-
-        bg_down = workchain.outputs.misc['band_gap_spin_down']
-        bg_up = workchain.outputs.misc['band_gap_spin_up']
-        self.report(f'Band Gaps are {bg_down} and {bg_up}')
-        self.out(
-            f'final_incar.{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}', self.ctx.prev_incar
-        )
-        self.ctx.all_outputs[f'{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}'
-                             ] = workchain.outputs.misc
-        # NEW
 
         # OLD
         # if self.ctx.stage_calc_types[self.ctx.stage_tag] == 'static':
