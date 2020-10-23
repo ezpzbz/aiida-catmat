@@ -475,6 +475,9 @@ class VaspMultiStageWorkChain(WorkChain):
         if prod_relax:
             self.ctx.vasp_base.handler_overrides = orm.Dict(dict={'handle_ionic_convergence': True})
             self.report('Switching on the ionic convergence handler')
+        else:
+            self.ctx.vasp_base.handler_overrides = orm.Dict(dict={'handle_ionic_convergence': False})
+            self.report('Switching off the ionic convergence handler')
 
         inputs = prepare_process_inputs(VaspBaseWorkChain, self.ctx.vasp_base)
         running = self.submit(VaspBaseWorkChain, **inputs)
