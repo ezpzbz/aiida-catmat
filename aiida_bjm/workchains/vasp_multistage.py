@@ -202,7 +202,7 @@ def get_stage_incar(protocol, structure, stage_tag, hubbard_tag=None, prev_incar
         hubbard = get_hubbard(structure, hubbard_tag.value)
         dict_merge(next_incar, hubbard)
     if prev_incar:
-        param_list = ['ALGO', 'ISMEAR', 'SIGMA', 'SYMPREC', 'AMIN', 'ISYM', 'KPAR', 'LREAL']
+        param_list = ['ALGO', 'ISMEAR', 'SIGMA', 'SYMPREC', 'AMIN', 'ISYM', 'KPAR', 'LREAL', 'NELM', 'NSW']
         prev_incar = prev_incar.get_dict()
         # Update next incar with params from previous INCAR
         for param in param_list:
@@ -255,8 +255,7 @@ class VaspMultiStageWorkChain(WorkChain):
         spec.expose_inputs(
             VaspBaseWorkChain,
             include=[
-                'clean_workdir', 'handler_overrides', 'max_iterations', 'vasp.code', 'vasp.restart_folder',
-                'vasp.metadata', 'vasp.potential'
+                'clean_workdir', 'max_iterations', 'vasp.code', 'vasp.restart_folder', 'vasp.metadata', 'vasp.potential'
             ],
             namespace='vasp_base'
         )
