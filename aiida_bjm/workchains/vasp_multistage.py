@@ -192,7 +192,7 @@ def sort_structure(structure):
 
 
 @calcfunction
-def get_stage_incar(protocol, structure, stage_tag, hubbard_tag=None, prev_incar=None):
+def get_stage_incar(protocol, structure, stage_tag, hubbard_tag=None, prev_incar=None, modifications=None):
     """get INCAR for next stage"""
     next_incar = protocol[stage_tag.value]
     structure_pmg = structure.get_pymatgen_structure(add_spin=True)
@@ -202,7 +202,7 @@ def get_stage_incar(protocol, structure, stage_tag, hubbard_tag=None, prev_incar
         hubbard = get_hubbard(structure, hubbard_tag.value)
         dict_merge(next_incar, hubbard)
     if prev_incar:
-        param_list = ['ALGO', 'ISMEAR', 'SIGMA', 'SYMPREC', 'AMIN', 'ISYM', 'KPAR', 'LREAL', 'NELM', 'NSW']
+        param_list = ['ALGO', 'ISMEAR', 'SIGMA', 'SYMPREC', 'AMIN', 'ISYM', 'KPAR', 'LREAL']
         prev_incar = prev_incar.get_dict()
         # Update next incar with params from previous INCAR
         for param in param_list:
@@ -210,6 +210,10 @@ def get_stage_incar(protocol, structure, stage_tag, hubbard_tag=None, prev_incar
                 next_incar[param] = prev_incar[param]
         if prev_incar['IBRION'] == -1:
             next_incar['LREAL'] = False
+    if modifications:
+        modifications = modifications.get_dict()
+        for key, value in modifications.items():
+            next_incar[key] = value
     return orm.Dict(dict=next_incar)
 
 
@@ -236,13 +240,13 @@ def get_last_input(workchain):
     return calcjobs[last_index].inputs.parameters
 
 
-@calcfunction
-def update_prev_incar(incar, modifications):
-    """Merge two aiida Dict objects."""
-    incar = incar.get_dict()
-    modifications = modifications.get_dict()
-    dict_merge(incar, modifications)
-    return orm.Dict(dict=incar)
+# @calcfunction
+# def update_prev_incar(incar, modifications):
+#     """Merge two aiida Dict objects."""
+#     incar = incar.get_dict()
+#     modifications = modifications.get_dict()
+#     dict_merge(incar, modifications)
+#     return orm.Dict(dict=incar)
 
 
 #pylint: disable=inconsistent-return-statements
@@ -365,7 +369,7 @@ class VaspMultiStageWorkChain(WorkChain):
         self.ctx.all_outputs = {}
         self.ctx.stage_iteration = 0
         self.ctx.prev_incar = None
-        self.ctx.modifications = {}
+        self.ctx.modifications = None
 
         # Restart folder
         # It is useful if user wants to restart later!
@@ -427,6 +431,7 @@ class VaspMultiStageWorkChain(WorkChain):
             self.ctx.protocol, self.ctx.current_structure, orm.Str(self.ctx.stage_tag),
             hubbard_tag=self.ctx.hubbard_tag,
             prev_incar=self.ctx.prev_incar,
+            modifications=orm.Dict(dict=self.ctx.modifications),
             metadata={
                 'label':'get_stage_incar',
                 'description': 'calcfuntion to get INCAR for current stage',
@@ -497,6 +502,7 @@ class VaspMultiStageWorkChain(WorkChain):
 
         # Here we check of the run is production or burn! In case of production we need to check for convergence!
         if self.ctx.stage_calc_types[self.ctx.stage_tag] == 'relaxation':
+            self.ctx.current_structure = workchain.outputs.structure
             if self.ctx.stage_tag != 'stage_0':
                 self.ctx.prod_relax = True
             # In case someone just wants to run a single stage relax calculations.
@@ -531,15 +537,15 @@ class VaspMultiStageWorkChain(WorkChain):
                 self.ctx.modifications.update({'ALGO': 'Normal', 'NELM': nelm})
             elif self.ctx.vasp_base.vasp.parameters['ALGO'] in ['Normal']:
                 self.ctx.modifications.update({'ALGO': 'All', 'NELM': nelm})
-            self.ctx.prev_incar = update_prev_incar(self.ctx.prev_incar, orm.Dict(dict=self.ctx.modifications))
-            algo = self.ctx.prev_incar['ALGO']
+            # self.ctx.prev_incar = update_prev_incar(self.ctx.prev_incar, orm.Dict(dict=self.ctx.modifications))
+            algo = self.ctx.modifications['ALGO']
             self.report(f'Electronic Convergence has not been reached: ALGO is set to {algo} and NELM is set to {nelm}')
         elif (not converged) and self.ctx.prod_relax:
             self.ctx.stage_iteration += 1
             # nsw = self.ctx.parameters.get_dict().get('NSW', 400) + 100
             nsw = self.ctx.prev_incar.get_dict().get('NSW', 400) + 100
             self.ctx.modifications.update({'NSW': nsw})
-            self.ctx.prev_incar = update_prev_incar(self.ctx.prev_incar, orm.Dict(dict=self.ctx.modifications))
+            # self.ctx.prev_incar = update_prev_incar(self.ctx.prev_incar, orm.Dict(dict=self.ctx.modifications))
             self.report(f'Ionic Convergence has not been reached: NSW is set to {nsw}')
         # If it is converged, we move on to next stage.
         elif converged:
