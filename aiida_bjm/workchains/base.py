@@ -25,14 +25,6 @@ def update_incar(incar, modifications):
 
 
 @calcfunction
-def update_structure(retrived_folder):
-    """update structure to CONTCAR"""
-    with retrived_folder.open('CONTCAR') as handler:
-        structure = Structure.from_file(handler.name)
-    return StructureData(pymatgen_structure=structure)
-
-
-@calcfunction
 def apply_strain_on_structure(retrived_folder):
     """Apply 0.2 strain on structure"""
     with retrived_folder.open('CONTCAR') as handler:
@@ -137,33 +129,6 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
             self.ctx.inputs.parameters = update_incar(self.ctx.parameters, Dict(dict=self.ctx.modifications))
             self.ctx.modifications = {}
             self.report('Applied all modifications for {}<{}>'.format(calculation.process_label, calculation.pk))
-            return ProcessHandlerReport(False)
-
-    @process_handler(priority=550, enabled=True)
-    def handle_electronic_convergence(self, calculation):
-        """Check and handle electronic convergence"""
-        converged = calculation.outputs.misc['converged_electronically']
-        if not converged:
-            nelm = self.ctx.parameters.get_dict().get('NELM', 200) * 2
-            if self.ctx.parameters['ALGO'] in ['Fast', 'VeryFast']:
-                self.ctx.modifications.update({'ALGO': 'Normal', 'NELM': nelm})
-            elif self.ctx.parameters['ALGO'] == 'Normal':
-                self.ctx.modifications.update({'ALGO': 'All', 'NELM': nelm})
-            algo = self.ctx.modifications['ALGO']
-            action = f'Electronic Convergence has not been reached: ALGO is set to {algo} and NELM is set to {nelm}'
-            self.report_error_handled(calculation, action)
-            return ProcessHandlerReport(False)
-
-    @process_handler(priority=560, enabled=False)
-    def handle_ionic_convergence(self, calculation):
-        """Check and handle electronic convergence"""
-        converged = calculation.outputs.misc['converged']
-        if not converged:
-            nsw = self.ctx.parameters.get_dict().get('NSW', 400) + 50
-            self.ctx.modifications.update({'NSW': nsw})
-            self.ctx.inputs.structure = update_structure(calculation.outputs.retrieved)
-            action = f'Ionic Convergence has not been reached: NSW is set to {nsw}'
-            self.report_error_handled(calculation, action)
             return ProcessHandlerReport(False)
 
     @process_handler(priority=300, enabled=True)

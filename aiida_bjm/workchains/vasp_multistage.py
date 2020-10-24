@@ -236,6 +236,15 @@ def get_last_input(workchain):
     return calcjobs[last_index].inputs.parameters
 
 
+@calcfunction
+def update_prev_incar(incar, modifications):
+    """Merge two aiida Dict objects."""
+    incar = incar.get_dict()
+    modifications = modifications.get_dict()
+    dict_merge(incar, modifications)
+    return orm.Dict(dict=incar)
+
+
 #pylint: disable=inconsistent-return-statements
 class VaspMultiStageWorkChain(WorkChain):
     """Multi Stage Workchain"""
@@ -355,8 +364,9 @@ class VaspMultiStageWorkChain(WorkChain):
             self.inputs.settings = settings
         self.ctx.vasp_base.vasp.settings = self.inputs.settings
         self.ctx.all_outputs = {}
-        # self.ctx.stage_iteration = 0
+        self.ctx.stage_iteration = 0
         self.ctx.prev_incar = None
+        self.ctx.modifications = {}
 
         # Restart folder
         # It is useful if user wants to restart later!
@@ -461,24 +471,6 @@ class VaspMultiStageWorkChain(WorkChain):
         self.ctx.vasp_base['metadata']['label'] = self.ctx.vasp_base.vasp['metadata']['label']
         self.ctx.vasp_base['metadata']['call_link_label'] = self.ctx.vasp_base.vasp['metadata']['call_link_label']
 
-        # Activate ionic convergence handler if it is a relaxation stage.
-        # We need to know if it is a production relax stage.
-        prod_relax = False
-        if self.ctx.stage_calc_types[self.ctx.stage_tag] == 'relaxation':
-            if self.ctx.stage_tag != 'stage_0':
-                prod_relax = True
-            # In case someone just wants to run a single stage relax calculations.
-            elif (self.ctx.stage_tag == 'stage_0' and len(list(self.ctx.protocol.get_dict().keys())) == 1):
-                prod_relax = True
-
-        # if ((self.ctx.stage_calc_types[self.ctx.stage_tag] == 'relaxation') and (self.ctx.stage_tag != 'stage_0')):
-        if prod_relax:
-            self.ctx.vasp_base.handler_overrides = orm.Dict(dict={'handle_ionic_convergence': True})
-            self.report('Switching on the ionic convergence handler')
-        else:
-            self.ctx.vasp_base.handler_overrides = orm.Dict(dict={'handle_ionic_convergence': False})
-            self.report('Switching off the ionic convergence handler')
-
         inputs = prepare_process_inputs(VaspBaseWorkChain, self.ctx.vasp_base)
         running = self.submit(VaspBaseWorkChain, **inputs)
         tag = self.ctx.stage_tag
@@ -486,7 +478,7 @@ class VaspMultiStageWorkChain(WorkChain):
         self.report(f'Submitted VaspBaseWorkchain <pk>:{running.pk} for {tag}_{calc_type}')
         return ToContext(workchain=(append_(running)))
 
-    def inspect_stage(self):
+    def inspect_stage(self):  #pylint: disable=too-many-statements
         """Do the inspection of finished stage!"""
         try:
             workchain = self.ctx.workchain[-1]
@@ -496,12 +488,61 @@ class VaspMultiStageWorkChain(WorkChain):
             )
             return self.exit_codes.ERROR_NO_CALLED_WORKCHAIN  # pylint: disable=no-member
 
-        if workchain.is_finished_ok:
-            # NEW
-            self.ctx.stage_idx += 1
-            self.ctx.restart_folder = workchain.outputs.remote_folder
-            self.ctx.prev_incar = get_last_input(workchain)
+        if not workchain.is_finished_ok:
+            self.report('Workchain failed with unrecoverable failure!')
+            return self.exit_codes.ERROR_UNRECOVERABLE_FAILURE  # pylint: disable=no-member
 
+        # We need to know if it is a production relax stage.
+        self.ctx.prod_static = False
+        self.ctx.prod_relax = False
+
+        # Here we check of the run is production or burn! In case of production we need to check for convergence!
+        if self.ctx.stage_calc_types[self.ctx.stage_tag] == 'relaxation':
+            if self.ctx.stage_tag != 'stage_0':
+                self.ctx.prod_relax = True
+            # In case someone just wants to run a single stage relax calculations.
+            elif (self.ctx.stage_tag == 'stage_0' and len(list(self.ctx.protocol.get_dict().keys())) == 1):
+                self.ctx.prod_relax = True
+
+        if self.ctx.stage_calc_types[self.ctx.stage_tag] == 'static':
+            if self.ctx.stage_tag != 'stage_0':
+                self.ctx.prod_static = True
+            # In case someone just wants to run a single stage static calculations.
+            elif (self.ctx.stage_tag == 'stage_0' and len(list(self.ctx.protocol.get_dict().keys())) == 1):
+                self.ctx.prod_static = True
+
+        # If it is an inital stage, we do not look for convergence.
+        if (not self.ctx.prod_static) and (not self.ctx.prod_relax):
+            converged = True
+        elif self.ctx.prod_static:
+            converged = workchain.outputs.misc['converged_electronically']
+        elif self.ctx.prod_relax:
+            converged = workchain.outputs.misc['converged']
+
+        # Assigning restart folder and INCAR from previous run
+        self.ctx.restart_folder = workchain.outputs.remote_folder
+        self.ctx.prev_incar = get_last_input(workchain)
+
+        # Handling convergence issues for static and relax run.
+        if (not converged) and self.prod_static:
+            self.ctx.stage_iteration += 1
+            nelm = self.ctx.vasp_base.vasp.parameters.get_dict().get('NELM', 200) * 2
+            if self.ctx.vasp_base.vasp.parameters['ALGO'] in ['Fast', 'VeryFast']:
+                self.ctx.modifications.update({'ALGO': 'Normal', 'NELM': nelm})
+            elif self.ctx.vasp_base.vasp.parameters['ALGO'] in ['Normal']:
+                self.ctx.modifications.update({'ALGO': 'All', 'NELM': nelm})
+            self.ctx.prev_incar = update_prev_incar(self.ctx.prev_incar, orm.Dict(dict=self.ctx.modifications))
+            algo = self.ctx.prev_incar['ALGO']
+            self.report(f'Electronic Convergence has not been reached: ALGO is set to {algo} and NELM is set to {nelm}')
+        elif (not converged) and self.prod_relax:
+            self.ctx.stage_iteration += 1
+            nsw = self.ctx.parameters.get_dict().get('NSW', 400) + 100
+            self.ctx.modifications.update({'NSW': nsw})
+            self.ctx.prev_incar = update_prev_incar(self.ctx.prev_incar, orm.Dict(dict=self.ctx.modifications))
+            self.report(f'Ionic Convergence has not been reached: NSW is set to {nsw}')
+        # If it is converged, we move on to next stage.
+        elif converged:
+            self.ctx.stage_idx += 1
             bg_down = workchain.outputs.misc['band_gap_spin_down']
             bg_up = workchain.outputs.misc['band_gap_spin_up']
             self.report(f'Band Gaps are {bg_down} and {bg_up}')
@@ -510,44 +551,12 @@ class VaspMultiStageWorkChain(WorkChain):
             )
             self.ctx.all_outputs[f'{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}'
                                  ] = workchain.outputs.misc
-        else:
-            self.report('Workchain failed with unrecoverable failure!')
-            return self.exit_codes.ERROR_UNRECOVERABLE_FAILURE  # pylint: disable=no-member
+            self.ctx.stage_iteration = 0
 
-        # OLD
-        # if self.ctx.stage_calc_types[self.ctx.stage_tag] == 'static':
-        #     converged = workchain.outputs.misc['converged_electronically']
-        # if self.ctx.stage_calc_types[self.ctx.stage_tag] == 'relaxation':
-        #     if self.ctx.stage_tag == 'stage_0':
-        #         converged = True
-        #     else:
-        #         converged = workchain.outputs.misc['converged']
-        #         self.ctx.current_structure = workchain.outputs.structure
-
-        # self.ctx.restart_folder = workchain.outputs.remote_folder
-        # self.ctx.prev_incar = get_last_input(workchain)
-
-        # if converged:
-        #     self.ctx.stage_idx += 1
-        #     bg_down = workchain.outputs.misc['band_gap_spin_down']
-        #     bg_up = workchain.outputs.misc['band_gap_spin_up']
-        #     self.report(f'Band Gaps are {bg_down} and {bg_up}')
-        #     self.out(
-        #         f'final_incar.{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}',
-        #           self.ctx.prev_incar
-        #     )
-        #     self.ctx.all_outputs[f'{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}'
-        #                          ] = workchain.outputs.misc
-        # self.ctx.stage_iteration = 0
-        # else:
-        #     self.ctx.stage_iteration += 1
-        #     self.report(f'{self.ctx.stage_tag} is not converged. Resubmitting iteration_{self.ctx.stage_iteration}')
-
-        # if self.ctx.stage_iteration > self.inputs.max_stage_iteration:
-        #     self.report(f'Could not reach the convergence in stage_{self.ctx.stage_idx}! Better check them manually!')
-        #     self.ctx.should_run_next_stage = False
-        #     return self.exit_codes.ERROR_NON_CONVERGED_GEOMETRY  # pylint: disable=no-member
-        # OLD
+        if self.ctx.stage_iteration > self.inputs.max_stage_iteration:
+            self.report(f'Could not reach the convergence in stage_{self.ctx.stage_idx}! Better check them manually!')
+            self.ctx.should_run_next_stage = False
+            return self.exit_codes.ERROR_NON_CONVERGED_GEOMETRY  # pylint: disable=no-member
 
         if not f'stage_{self.ctx.stage_idx}' in self.ctx.protocol.get_dict():
             self.report('All stages are computed!')
