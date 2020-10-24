@@ -524,7 +524,7 @@ class VaspMultiStageWorkChain(WorkChain):
         self.ctx.prev_incar = get_last_input(workchain)
 
         # Handling convergence issues for static and relax run.
-        if (not converged) and self.prod_static:
+        if (not converged) and self.ctx.prod_static:
             self.ctx.stage_iteration += 1
             nelm = self.ctx.vasp_base.vasp.parameters.get_dict().get('NELM', 200) * 2
             if self.ctx.vasp_base.vasp.parameters['ALGO'] in ['Fast', 'VeryFast']:
@@ -534,7 +534,7 @@ class VaspMultiStageWorkChain(WorkChain):
             self.ctx.prev_incar = update_prev_incar(self.ctx.prev_incar, orm.Dict(dict=self.ctx.modifications))
             algo = self.ctx.prev_incar['ALGO']
             self.report(f'Electronic Convergence has not been reached: ALGO is set to {algo} and NELM is set to {nelm}')
-        elif (not converged) and self.prod_relax:
+        elif (not converged) and self.ctx.prod_relax:
             self.ctx.stage_iteration += 1
             nsw = self.ctx.parameters.get_dict().get('NSW', 400) + 100
             self.ctx.modifications.update({'NSW': nsw})
