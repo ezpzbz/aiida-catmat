@@ -526,7 +526,8 @@ class VaspMultiStageWorkChain(WorkChain):
         # Handling convergence issues for static and relax run.
         if (not converged) and self.ctx.prod_static:
             self.ctx.stage_iteration += 1
-            nelm = self.ctx.vasp_base.vasp.parameters.get_dict().get('NELM', 200) * 2
+            # nelm = self.ctx.vasp_base.vasp.parameters.get_dict().get('NELM', 200) * 2
+            nelm = self.ctx.prev_incar.get_dict().get('NELM', 200) * 2
             if self.ctx.vasp_base.vasp.parameters['ALGO'] in ['Fast', 'VeryFast']:
                 self.ctx.modifications.update({'ALGO': 'Normal', 'NELM': nelm})
             elif self.ctx.vasp_base.vasp.parameters['ALGO'] in ['Normal']:
@@ -536,7 +537,8 @@ class VaspMultiStageWorkChain(WorkChain):
             self.report(f'Electronic Convergence has not been reached: ALGO is set to {algo} and NELM is set to {nelm}')
         elif (not converged) and self.ctx.prod_relax:
             self.ctx.stage_iteration += 1
-            nsw = self.ctx.parameters.get_dict().get('NSW', 400) + 100
+            # nsw = self.ctx.parameters.get_dict().get('NSW', 400) + 100
+            nsw = self.ctx.prev_incar.get_dict().get('NSW', 400) + 100
             self.ctx.modifications.update({'NSW': nsw})
             self.ctx.prev_incar = update_prev_incar(self.ctx.prev_incar, orm.Dict(dict=self.ctx.modifications))
             self.report(f'Ionic Convergence has not been reached: NSW is set to {nsw}')
