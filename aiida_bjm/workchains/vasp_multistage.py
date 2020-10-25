@@ -135,8 +135,6 @@ def setup_protocols(protocol_tag, structure, user_incar_settings):
     """Read stages from provided protocol file, and
     constructs initial INCARs from Materials Project
     sets."""
-    # structure_pmg = structure.get_pymatgen_structure(add_spin=True)
-
     # Get user-defined stages and alternative settings from yaml file
     thisdir = os.path.dirname(os.path.abspath(__file__))
     protocol_path = os.path.join(thisdir, 'protocols', 'vasp', protocol_tag.value + '.yaml')
@@ -149,8 +147,6 @@ def setup_protocols(protocol_tag, structure, user_incar_settings):
     if user_incar_settings['LDAU']:
         for key in protocol.keys():
             protocol[key]['LDAU'] = True
-
-    # magmom = get_magmom(structure_pmg)
 
     # Check for LREAL
     nions = 0
@@ -165,7 +161,6 @@ def setup_protocols(protocol_tag, structure, user_incar_settings):
     # Update MAGMOM and LDAU section in all stages!
     for key in protocol.keys():
         dict_merge(protocol[key], lreal)
-        # dict_merge(protocol[key], magmom)
         dict_merge(protocol[key], user_incar_settings)
 
     return orm.Dict(dict=protocol)
@@ -238,15 +233,6 @@ def get_last_input(workchain):
     pks = [cjob.pk for cjob in calcjobs]
     last_index = pks.index(max(pks))
     return calcjobs[last_index].inputs.parameters
-
-
-# @calcfunction
-# def update_prev_incar(incar, modifications):
-#     """Merge two aiida Dict objects."""
-#     incar = incar.get_dict()
-#     modifications = modifications.get_dict()
-#     dict_merge(incar, modifications)
-#     return orm.Dict(dict=incar)
 
 
 #pylint: disable=inconsistent-return-statements
@@ -532,22 +518,18 @@ class VaspMultiStageWorkChain(WorkChain):
         if (not converged) and self.ctx.prod_static:
             self.ctx.modifications = {}
             self.ctx.stage_iteration += 1
-            # nelm = self.ctx.vasp_base.vasp.parameters.get_dict().get('NELM', 200) * 2
             nelm = self.ctx.prev_incar.get_dict().get('NELM', 200) * 2
             if self.ctx.vasp_base.vasp.parameters['ALGO'] in ['Fast', 'VeryFast']:
                 self.ctx.modifications.update({'ALGO': 'Normal', 'NELM': nelm})
             elif self.ctx.vasp_base.vasp.parameters['ALGO'] in ['Normal']:
                 self.ctx.modifications.update({'ALGO': 'All', 'NELM': nelm})
-            # self.ctx.prev_incar = update_prev_incar(self.ctx.prev_incar, orm.Dict(dict=self.ctx.modifications))
             algo = self.ctx.modifications['ALGO']
             self.report(f'Electronic Convergence has not been reached: ALGO is set to {algo} and NELM is set to {nelm}')
         elif (not converged) and self.ctx.prod_relax:
             self.ctx.modifications = {}
             self.ctx.stage_iteration += 1
-            # nsw = self.ctx.parameters.get_dict().get('NSW', 400) + 100
             nsw = self.ctx.prev_incar.get_dict().get('NSW', 400) + 100
             self.ctx.modifications.update({'NSW': nsw})
-            # self.ctx.prev_incar = update_prev_incar(self.ctx.prev_incar, orm.Dict(dict=self.ctx.modifications))
             self.report(f'Ionic Convergence has not been reached: NSW is set to {nsw}')
         # If it is converged, we move on to next stage.
         elif converged:
