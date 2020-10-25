@@ -520,9 +520,9 @@ class VaspMultiStageWorkChain(WorkChain):
             self.ctx.stage_iteration += 1
             nelm = self.ctx.prev_incar.get_dict().get('NELM', 200) * 2
             if self.ctx.vasp_base.vasp.parameters['ALGO'] in ['Fast', 'VeryFast']:
-                self.ctx.modifications.update({'ALGO': 'Normal', 'NELM': nelm})
+                self.ctx.modifications.update({'ALGO': 'Normal', 'NELM': nelm, 'ISTART': 0, 'ICHARG': 2})
             elif self.ctx.vasp_base.vasp.parameters['ALGO'] in ['Normal']:
-                self.ctx.modifications.update({'ALGO': 'All', 'NELM': nelm})
+                self.ctx.modifications.update({'ALGO': 'All', 'NELM': nelm, 'ISTART': 0, 'ICHARG': 2})
             algo = self.ctx.modifications['ALGO']
             self.report(f'Electronic Convergence has not been reached: ALGO is set to {algo} and NELM is set to {nelm}')
         elif (not converged) and self.ctx.prod_relax:
