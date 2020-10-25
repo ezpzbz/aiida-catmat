@@ -530,6 +530,7 @@ class VaspMultiStageWorkChain(WorkChain):
 
         # Handling convergence issues for static and relax run.
         if (not converged) and self.ctx.prod_static:
+            self.ctx.modifications = {}
             self.ctx.stage_iteration += 1
             # nelm = self.ctx.vasp_base.vasp.parameters.get_dict().get('NELM', 200) * 2
             nelm = self.ctx.prev_incar.get_dict().get('NELM', 200) * 2
@@ -541,6 +542,7 @@ class VaspMultiStageWorkChain(WorkChain):
             algo = self.ctx.modifications['ALGO']
             self.report(f'Electronic Convergence has not been reached: ALGO is set to {algo} and NELM is set to {nelm}')
         elif (not converged) and self.ctx.prod_relax:
+            self.ctx.modifications = {}
             self.ctx.stage_iteration += 1
             # nsw = self.ctx.parameters.get_dict().get('NSW', 400) + 100
             nsw = self.ctx.prev_incar.get_dict().get('NSW', 400) + 100
@@ -559,6 +561,7 @@ class VaspMultiStageWorkChain(WorkChain):
             self.ctx.all_outputs[f'{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}'
                                  ] = workchain.outputs.misc
             self.ctx.stage_iteration = 0
+            self.ctx.modifications = None
 
         if self.ctx.stage_iteration > self.inputs.max_stage_iteration:
             self.report(f'Could not reach the convergence in stage_{self.ctx.stage_idx}! Better check them manually!')
