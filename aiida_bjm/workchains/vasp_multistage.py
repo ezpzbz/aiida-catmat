@@ -135,8 +135,6 @@ def setup_protocols(protocol_tag, structure, user_incar_settings):
     """Read stages from provided protocol file, and
     constructs initial INCARs from Materials Project
     sets."""
-    # structure_pmg = structure.get_pymatgen_structure(add_spin=True)
-
     # Get user-defined stages and alternative settings from yaml file
     thisdir = os.path.dirname(os.path.abspath(__file__))
     protocol_path = os.path.join(thisdir, 'protocols', 'vasp', protocol_tag.value + '.yaml')
@@ -149,8 +147,6 @@ def setup_protocols(protocol_tag, structure, user_incar_settings):
     if user_incar_settings['LDAU']:
         for key in protocol.keys():
             protocol[key]['LDAU'] = True
-
-    # magmom = get_magmom(structure_pmg)
 
     # Check for LREAL
     nions = 0
@@ -165,7 +161,6 @@ def setup_protocols(protocol_tag, structure, user_incar_settings):
     # Update MAGMOM and LDAU section in all stages!
     for key in protocol.keys():
         dict_merge(protocol[key], lreal)
-        # dict_merge(protocol[key], magmom)
         dict_merge(protocol[key], user_incar_settings)
 
     return orm.Dict(dict=protocol)
@@ -192,7 +187,7 @@ def sort_structure(structure):
 
 
 @calcfunction
-def get_stage_incar(protocol, structure, stage_tag, hubbard_tag=None, prev_incar=None):
+def get_stage_incar(protocol, structure, stage_tag, hubbard_tag=None, prev_incar=None, modifications=None):
     """get INCAR for next stage"""
     next_incar = protocol[stage_tag.value]
     structure_pmg = structure.get_pymatgen_structure(add_spin=True)
@@ -210,6 +205,10 @@ def get_stage_incar(protocol, structure, stage_tag, hubbard_tag=None, prev_incar
                 next_incar[param] = prev_incar[param]
         if prev_incar['IBRION'] == -1:
             next_incar['LREAL'] = False
+    if modifications:
+        modifications = modifications.get_dict()
+        for key, value in modifications.items():
+            next_incar[key] = value
     return orm.Dict(dict=next_incar)
 
 
@@ -245,7 +244,9 @@ class VaspMultiStageWorkChain(WorkChain):
         super().define(spec)
         spec.expose_inputs(
             VaspBaseWorkChain,
-            include=['vasp.code', 'vasp.restart_folder', 'vasp.metadata', 'vasp.potential'],
+            include=[
+                'clean_workdir', 'max_iterations', 'vasp.code', 'vasp.restart_folder', 'vasp.metadata', 'vasp.potential'
+            ],
             namespace='vasp_base'
         )
         spec.input('structure', valid_type=(orm.StructureData, orm.CifData))
@@ -354,6 +355,7 @@ class VaspMultiStageWorkChain(WorkChain):
         self.ctx.all_outputs = {}
         self.ctx.stage_iteration = 0
         self.ctx.prev_incar = None
+        self.ctx.modifications = None
 
         # Restart folder
         # It is useful if user wants to restart later!
@@ -415,6 +417,7 @@ class VaspMultiStageWorkChain(WorkChain):
             self.ctx.protocol, self.ctx.current_structure, orm.Str(self.ctx.stage_tag),
             hubbard_tag=self.ctx.hubbard_tag,
             prev_incar=self.ctx.prev_incar,
+            modifications=orm.Dict(dict=self.ctx.modifications),
             metadata={
                 'label':'get_stage_incar',
                 'description': 'calcfuntion to get INCAR for current stage',
@@ -465,7 +468,7 @@ class VaspMultiStageWorkChain(WorkChain):
         self.report(f'Submitted VaspBaseWorkchain <pk>:{running.pk} for {tag}_{calc_type}')
         return ToContext(workchain=(append_(running)))
 
-    def inspect_stage(self):
+    def inspect_stage(self):  #pylint: disable=too-many-statements
         """Do the inspection of finished stage!"""
         try:
             workchain = self.ctx.workchain[-1]
@@ -479,19 +482,57 @@ class VaspMultiStageWorkChain(WorkChain):
             self.report('Workchain failed with unrecoverable failure!')
             return self.exit_codes.ERROR_UNRECOVERABLE_FAILURE  # pylint: disable=no-member
 
-        if self.ctx.stage_calc_types[self.ctx.stage_tag] == 'static':
-            converged = workchain.outputs.misc['converged_electronically']
-        if self.ctx.stage_calc_types[self.ctx.stage_tag] == 'relaxation':
-            if self.ctx.stage_tag == 'stage_0':
-                converged = True
-            else:
-                converged = workchain.outputs.misc['converged']
-                self.ctx.current_structure = workchain.outputs.structure
+        # We need to know if it is a production relax stage.
+        self.ctx.prod_static = False
+        self.ctx.prod_relax = False
 
+        # Here we check of the run is production or burn! In case of production we need to check for convergence!
+        if self.ctx.stage_calc_types[self.ctx.stage_tag] == 'relaxation':
+            self.ctx.current_structure = workchain.outputs.structure
+            if self.ctx.stage_tag != 'stage_0':
+                self.ctx.prod_relax = True
+            # In case someone just wants to run a single stage relax calculations.
+            elif (self.ctx.stage_tag == 'stage_0' and len(list(self.ctx.protocol.get_dict().keys())) == 1):
+                self.ctx.prod_relax = True
+
+        if self.ctx.stage_calc_types[self.ctx.stage_tag] == 'static':
+            if self.ctx.stage_tag != 'stage_0':
+                self.ctx.prod_static = True
+            # In case someone just wants to run a single stage static calculations.
+            elif (self.ctx.stage_tag == 'stage_0' and len(list(self.ctx.protocol.get_dict().keys())) == 1):
+                self.ctx.prod_static = True
+
+        # If it is an inital stage, we do not look for convergence.
+        if (not self.ctx.prod_static) and (not self.ctx.prod_relax):
+            converged = True
+        elif self.ctx.prod_static:
+            converged = workchain.outputs.misc['converged_electronically']
+        elif self.ctx.prod_relax:
+            converged = workchain.outputs.misc['converged']
+
+        # Assigning restart folder and INCAR from previous run
         self.ctx.restart_folder = workchain.outputs.remote_folder
         self.ctx.prev_incar = get_last_input(workchain)
 
-        if converged:
+        # Handling convergence issues for static and relax run.
+        if (not converged) and self.ctx.prod_static:
+            self.ctx.modifications = {}
+            self.ctx.stage_iteration += 1
+            nelm = self.ctx.prev_incar.get_dict().get('NELM', 200) * 2
+            if self.ctx.vasp_base.vasp.parameters['ALGO'] in ['Fast', 'VeryFast']:
+                self.ctx.modifications.update({'ALGO': 'Normal', 'NELM': nelm, 'ISTART': 0, 'ICHARG': 2})
+            elif self.ctx.vasp_base.vasp.parameters['ALGO'] in ['Normal']:
+                self.ctx.modifications.update({'ALGO': 'All', 'NELM': nelm, 'ISTART': 0, 'ICHARG': 2})
+            algo = self.ctx.modifications['ALGO']
+            self.report(f'Electronic Convergence has not been reached: ALGO is set to {algo} and NELM is set to {nelm}')
+        elif (not converged) and self.ctx.prod_relax:
+            self.ctx.modifications = {}
+            self.ctx.stage_iteration += 1
+            nsw = self.ctx.prev_incar.get_dict().get('NSW', 400) + 100
+            self.ctx.modifications.update({'NSW': nsw})
+            self.report(f'Ionic Convergence has not been reached: NSW is set to {nsw}')
+        # If it is converged, we move on to next stage.
+        elif converged:
             self.ctx.stage_idx += 1
             bg_down = workchain.outputs.misc['band_gap_spin_down']
             bg_up = workchain.outputs.misc['band_gap_spin_up']
@@ -502,9 +543,7 @@ class VaspMultiStageWorkChain(WorkChain):
             self.ctx.all_outputs[f'{self.ctx.stage_tag}_{self.ctx.stage_calc_types[self.ctx.stage_tag]}'
                                  ] = workchain.outputs.misc
             self.ctx.stage_iteration = 0
-        else:
-            self.ctx.stage_iteration += 1
-            self.report(f'{self.ctx.stage_tag} is not converged. Resubmitting iteration_{self.ctx.stage_iteration}')
+            self.ctx.modifications = None
 
         if self.ctx.stage_iteration > self.inputs.max_stage_iteration:
             self.report(f'Could not reach the convergence in stage_{self.ctx.stage_idx}! Better check them manually!')
