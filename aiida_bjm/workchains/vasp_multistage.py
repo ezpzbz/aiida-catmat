@@ -485,15 +485,18 @@ class VaspMultiStageWorkChain(WorkChain):
         # We need to know if it is a production relax stage.
         self.ctx.prod_static = False
         self.ctx.prod_relax = False
-
+        nsw = self.ctx.vasp_base.vasp.parameters.get_dict().get('NSW')
         # Here we check of the run is production or burn! In case of production we need to check for convergence!
         if self.ctx.stage_calc_types[self.ctx.stage_tag] == 'relaxation':
             if self.ctx.stage_tag != 'stage_0':
                 self.ctx.prod_relax = True
                 self.ctx.current_structure = workchain.outputs.structure
             # In case someone just wants to run a single stage relax calculations.
-            elif (self.ctx.stage_tag == 'stage_0' and len(list(self.ctx.protocol.get_dict().keys())) == 1):
+            elif (self.ctx.stage_tag == 'stage_0' and nsw > 5):
                 self.ctx.prod_relax = True
+                self.ctx.current_structure = workchain.outputs.structure
+            elif (self.ctx.stage_tag == 'stage_0' and nsw <= 5):
+                self.ctx.prod_relax = False
                 self.ctx.current_structure = workchain.outputs.structure
 
         if self.ctx.stage_calc_types[self.ctx.stage_tag] == 'static':
