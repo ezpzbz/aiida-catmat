@@ -1,5 +1,5 @@
 stage_0:
-  ALGO: Fast
+  ALGO: Normal
   EDIFF: 1.0e-06
   ENCUT: 650
   IBRION: 2
@@ -14,7 +14,7 @@ stage_0:
   PREC: Accurate
   SIGMA: 0.05
 stage_1:
-  ALGO: Fast
+  ALGO: Normal
   EDIFF: 1.0e-06
   EDIFFG: -0.03
   ENCUT: 650
@@ -30,7 +30,7 @@ stage_1:
   PREC: Accurate
   SIGMA: 0.05
 stage_2:
-  ALGO: Fast
+  ALGO: Normal
   EDIFF: 1.0e-07
   ENCUT: 700
   IBRION: -1

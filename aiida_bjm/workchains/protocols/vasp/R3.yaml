@@ -1,5 +1,5 @@
 stage_0:
-  ALGO: Fast
+  ALGO: Normal
   EDIFF: 1.0e-06
   EDIFFG: -0.01
   ENCUT: 650
