@@ -167,14 +167,14 @@ def setup_protocols(protocol_tag, structure, user_incar_settings):
 
 
 @calcfunction
-def set_kpoints(structure, kspacing, kgamma=orm.Bool(False), forced_parity=orm.Bool(False)):
+def set_kpoints(structure, kspacing, kgamma=orm.Bool(False), force_parity=orm.Bool(False)):
     """Set kpoints mesh from kspacing"""
     kpoints = KpointsData()
     kpoints.set_cell_from_structure(structure)
     if kgamma:
-        kpoints.set_kpoints_mesh_from_density(kspacing.value, forced_parity=forced_parity.value)
+        kpoints.set_kpoints_mesh_from_density(kspacing.value, force_parity=force_parity.value)
     else:
-        kpoints.set_kpoints_mesh_from_density(kspacing.value, offset=[0.5, 0.5, 0.5], forced_parity=forced_parity.value)
+        kpoints.set_kpoints_mesh_from_density(kspacing.value, offset=[0.5, 0.5, 0.5], force_parity=force_parity.value)
     return kpoints
 
 
@@ -254,7 +254,7 @@ class VaspMultiStageWorkChain(WorkChain):
         spec.input('vasp_base.vasp.kpoints', valid_type=orm.KpointsData, required=False)
         spec.input('kspacing', valid_type=orm.Float, required=False, help='distance to generate kponits mesh')
         spec.input('kgamma', valid_type=orm.Bool, required=False, help='gamma centered kpoints in kspacing case')
-        spec.input('forced_parity', valid_type=orm.Bool, required=False, help='gamma centered kpoints in kspacing case')
+        spec.input('force_parity', valid_type=orm.Bool, required=False, help='gamma centered kpoints in kspacing case')
         spec.input('magmom', valid_type=orm.List, required=False, help='List of MAGMOM')
         spec.input('potential_family', valid_type=orm.Str, required=True)
         spec.input('potential_mapping', valid_type=orm.Dict, required=False)
@@ -309,7 +309,7 @@ class VaspMultiStageWorkChain(WorkChain):
             if 'kgamma' in self.inputs:
                 if self.inputs.kgamma:
                     kpoints = set_kpoints( #pylint: disable=unexpected-keyword-arg
-                        self.ctx.current_structure, self.inputs.kspacing, self.inputs.kgamma, self.inputs.forced_parity,
+                        self.ctx.current_structure, self.inputs.kspacing, self.inputs.kgamma, self.inputs.force_parity,
                         metadata={
                             'label':'set_kpoints',
                             'description': 'calcfuntion to construct kpoints from kspacing',
@@ -317,7 +317,7 @@ class VaspMultiStageWorkChain(WorkChain):
                         })
             else:
                 kpoints = set_kpoints( #pylint: disable=unexpected-keyword-arg
-                    self.ctx.current_structure, self.inpts.kspacing, self.inputs.forced_parity,
+                    self.ctx.current_structure, self.inpts.kspacing, self.inputs.force_parity,
                     metadata={
                             'label':'set_kpoints',
                             'description': 'calcfuntion to construct kpoints from kspacing',
