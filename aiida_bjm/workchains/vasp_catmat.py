@@ -2,7 +2,7 @@
 It wraps VaspMultiStageWorkChain to perform two ccnsecutive
 calculation for calculation of open circuit voltage.
 """
-from pymatgen import Element
+from pymatgen.core.periodic_table import Element
 
 from aiida import orm
 from aiida.common import AttributeDict

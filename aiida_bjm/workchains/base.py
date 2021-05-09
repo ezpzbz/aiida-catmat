@@ -1,5 +1,5 @@
 """Base work chain to run a VASP calculation"""
-from pymatgen import Structure
+from pymatgen.core.structure import Structure
 from pymatgen.io.vasp import Oszicar
 
 from aiida.common import AttributeDict
