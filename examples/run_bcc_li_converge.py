@@ -1,5 +1,4 @@
-"""
-Example of running VaspRelaxWorkChain on
+"""Example of running VaspRelaxWorkChain on
 BCC Li 2x2x2 supercell
 """
 import os
@@ -13,7 +12,7 @@ from aiida import orm
 from aiida.plugins import DataFactory, WorkflowFactory
 from aiida.engine import submit
 
-VaspConvergeWorkChain = WorkflowFactory('bjm.vasp_converge')  #pylint: disable=invalid-name
+VaspConvergeWorkChain = WorkflowFactory('catmat.vasp_converge')  #pylint: disable=invalid-name
 StructureData = DataFactory('structure')  #pylint: disable=invalid-name
 KpointsData = DataFactory('array.kpoints')  #pylint: disable=invalid-name
 

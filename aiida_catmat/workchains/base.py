@@ -7,9 +7,9 @@ from aiida.engine import calcfunction
 from aiida.engine import BaseRestartWorkChain, ProcessHandlerReport, process_handler, while_
 from aiida.orm import Dict
 from aiida.plugins import CalculationFactory, DataFactory
-from aiida_bjm.calcfunctions import dict_merge
+from aiida_catmat.calcfunctions import dict_merge
 
-from aiida_bjm.parsers import STDERR_ERRS, STDOUT_ERRS
+from aiida_catmat.parsers import STDERR_ERRS, STDOUT_ERRS
 
 StructureData = DataFactory('structure')  # pylint: disable=invalid-name
 VaspCalculation = CalculationFactory('vasp.vasp')  # pylint: disable=invalid-name

@@ -13,7 +13,7 @@ from aiida import orm
 from aiida.plugins import DataFactory, WorkflowFactory
 from aiida.engine import submit
 
-VaspOcvWorkChain = WorkflowFactory('bjm.vasp_ocv')  #pylint: disable=invalid-name
+VaspOcvWorkChain = WorkflowFactory('catmat.vasp_ocv')  #pylint: disable=invalid-name
 StructureData = DataFactory('structure')  #pylint: disable=invalid-name
 KpointsData = DataFactory('array.kpoints')  #pylint: disable=invalid-name
 

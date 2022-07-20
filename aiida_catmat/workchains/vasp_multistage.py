@@ -11,8 +11,8 @@ from aiida.common import AttributeDict
 from aiida.engine import calcfunction, WorkChain, ToContext, append_, while_
 from aiida.plugins import DataFactory, WorkflowFactory
 
-from aiida_bjm.calcfunctions import dict_merge
-from aiida_bjm.utils import prepare_process_inputs
+from aiida_catmat.calcfunctions import dict_merge
+from aiida_catmat.utils import prepare_process_inputs
 
 VaspBaseWorkChain = WorkflowFactory('vasp.base')  #pylint: disable=invalid-name
 PotcarData = DataFactory('vasp.potcar')  #pylint: disable=invalid-name
