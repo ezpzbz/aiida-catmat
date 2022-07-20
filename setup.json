@@ -13,7 +13,10 @@
     "setup_requires": ["reentry"],
     "reentry_register": true,
     "install_requires": [
-        "aiida-core[atomic_tools]==1.6.8"
+        "aiida-core[atomic_tools]==1.6.8",
+        "aiida-vasp@git+https://github.com/aiida-vasp/aiida-vasp.git@14771c14ac5ccb08ac521d5936eb0c4ec5b9337f",
+        "parsevasp@git+https://github.com/aiida-vasp/parsevasp.git@3c3d6900d5356de2644cbf0dcfe1028b79d16a98",
+        "aiida-ddec"
     ],
     "entry_points": {
         "aiida.parsers": [
