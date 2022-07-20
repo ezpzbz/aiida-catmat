@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Setting up aiida-bjm for AiiDA"""
+"""Setting up aiida-catmat for AiiDA"""
 
 import json
 from setuptools import setup, find_packages

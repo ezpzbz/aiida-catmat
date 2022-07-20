@@ -16,8 +16,8 @@ with open(SETUP_PATH) as f:
 
 # Get version from python package
 sys.path.insert(0, os.path.join(THIS_PATH, os.pardir))
-import aiida_bjm  # pylint: disable=wrong-import-position
-VERSION = aiida_bjm.__version__
+import aiida_catmat  # pylint: disable=wrong-import-position
+VERSION = aiida_catmat.__version__
 
 if VERSION != SETUP_CONTENT['version']:
     print('version number mismatch detected:')

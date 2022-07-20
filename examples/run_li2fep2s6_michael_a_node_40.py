@@ -10,7 +10,7 @@ from aiida import orm
 from aiida.plugins import DataFactory, WorkflowFactory
 from aiida.engine import submit
 
-VaspMultiStageWorkChain = WorkflowFactory('bjm.vasp_multistage')  #pylint: disable=invalid-name
+VaspMultiStageWorkChain = WorkflowFactory('catmat.vasp_multistage')  #pylint: disable=invalid-name
 StructureData = DataFactory('structure')  #pylint: disable=invalid-name
 KpointsData = DataFactory('array.kpoints')  #pylint: disable=invalid-name
 

@@ -1,30 +1,30 @@
 {
-    "name": "aiida-bjm",
+    "name": "aiida-catmat",
     "author": "Pezhman Zarabadi-Poor",
-    "author_email": "pzp22@bath.ac.uk",
+    "author_email": "pzarabadip@gmail.com",
     "description": "Collection of AiiDA WorkChains Developed in Morgan Group",
-    "url": "https://github.com/morgan-group-bath/aiida-bjm",
+    "url": "https://github.com/pzarabadip/aiida-catmat",
     "license": "MIT License",
     "classifiers": [
-        "Programming Language :: Python :: 3.6",
-        "Programming Language :: Python :: 3.7"
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9"
     ],
-    "version": "0.3.0",
+    "version": "1.0.0b",
     "setup_requires": ["reentry"],
     "reentry_register": true,
     "install_requires": [
-        "aiida-core[atomic_tools]>=1.1.0,!=1.4.0,!=1.4.1"
+        "aiida-core[atomic_tools]==1.6.8"
     ],
     "entry_points": {
         "aiida.parsers": [
-            "vasp_base_parser = aiida_bjm.parsers:VaspBaseParser"
+            "vasp_base_parser = aiida_catmat.parsers:VaspBaseParser"
         ],
         "aiida.workflows": [
-            "vasp.base = aiida_bjm.workchains:VaspBaseWorkChain",
-            "bjm.vasp_multistage = aiida_bjm.workchains:VaspMultiStageWorkChain",
-            "bjm.vasp_converge = aiida_bjm.workchains:VaspConvergeWorkChain",
-            "bjm.vasp_catmat = aiida_bjm.workchains:VaspCatMatWorkChain",
-            "bjm.vasp_multistage_ddec = aiida_bjm.workchains:VaspMultiStageDdecWorkChain"
+            "vasp.base = aiida_catmat.workchains:VaspBaseWorkChain",
+            "bjm.vasp_multistage = aiida_catmat.workchains:VaspMultiStageWorkChain",
+            "bjm.vasp_converge = aiida_catmat.workchains:VaspConvergeWorkChain",
+            "bjm.vasp_catmat = aiida_catmat.workchains:VaspCatMatWorkChain",
+            "bjm.vasp_multistage_ddec = aiida_catmat.workchains:VaspMultiStageDdecWorkChain"
         ]
     },
     "data_files": [

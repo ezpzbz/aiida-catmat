@@ -8,7 +8,7 @@ from aiida.common import AttributeDict
 from aiida.engine import calcfunction, WorkChain, while_
 from aiida.plugins import DataFactory, WorkflowFactory
 
-VaspMultiStageWorkChain = WorkflowFactory('bjm.vasp_multistage')  #pylint: disable=invalid-name
+VaspMultiStageWorkChain = WorkflowFactory('catmat.vasp_multistage')  #pylint: disable=invalid-name
 PotcarData = DataFactory('vasp.potcar')  #pylint: disable=invalid-name
 KpointsData = DataFactory('array.kpoints')  #pylint: disable=invalid-name
 

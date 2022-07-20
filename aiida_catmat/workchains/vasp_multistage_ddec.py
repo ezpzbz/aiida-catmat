@@ -7,7 +7,7 @@ from aiida.common import AttributeDict
 from aiida.engine import WorkChain, ToContext
 from aiida.plugins import CalculationFactory, DataFactory, WorkflowFactory
 
-VaspMultiStageWorkChain = WorkflowFactory('bjm.vasp_multistage')  #pylint: disable=invalid-name
+VaspMultiStageWorkChain = WorkflowFactory('catmat.vasp_multistage')  #pylint: disable=invalid-name
 DdecCalculation = CalculationFactory('ddec')  # pylint: disable=invalid-name
 CifData = DataFactory('cif')  # pylint: disable=invalid-name
 
