@@ -9,17 +9,22 @@
         "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7"
     ],
-    "version": "0.1.0",
+    "version": "0.3.0",
     "setup_requires": ["reentry"],
     "reentry_register": true,
     "install_requires": [
-        "aiida-core>=1.1.0,<2.0.0"
+        "aiida-core[atomic_tools]>=1.1.0,!=1.4.0,!=1.4.1"
     ],
     "entry_points": {
+        "aiida.parsers": [
+            "vasp_base_parser = aiida_bjm.parsers:VaspBaseParser"
+        ],
         "aiida.workflows": [
-            "bjm.eos = aiida_bjm.workchains:EosWorkChain",
-            "bjm.ocv = aiida_bjm.workchains:VaspOcvWorkChain",
-            "bjm.vasp_multistage = aiida_bjm.workchains:VaspMultiStageWorkChain"
+            "vasp.base = aiida_bjm.workchains:VaspBaseWorkChain",
+            "bjm.vasp_multistage = aiida_bjm.workchains:VaspMultiStageWorkChain",
+            "bjm.vasp_converge = aiida_bjm.workchains:VaspConvergeWorkChain",
+            "bjm.vasp_catmat = aiida_bjm.workchains:VaspCatMatWorkChain",
+            "bjm.vasp_multistage_ddec = aiida_bjm.workchains:VaspMultiStageDdecWorkChain"
         ]
     },
     "data_files": [
@@ -30,10 +35,10 @@
             "pytest==4.4.1"
         ],
         "pre-commit": [
-                "pre-commit==1.17.0",
-                "yapf==0.28.0",
-                "prospector==1.1.7",
-                "pylint==2.3.1"
+            "pre-commit==2.0.1",
+            "yapf==0.28.0",
+            "prospector==1.2.0",
+            "pylint==2.4.4"
         ]
     }
 }

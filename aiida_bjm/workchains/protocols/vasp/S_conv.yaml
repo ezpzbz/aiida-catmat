@@ -1,0 +1,16 @@
+stage_0:
+  ALGO: Normal
+  EDIFF: 1.0e-07
+  IBRION: -1
+  ISMEAR: 0
+  ISPIN: 2
+  LAECHG: false
+  LCHARG: false
+  LORBIT: 11
+  LREAL: false
+  LVHAR: false
+  LWAVE: false
+  NELM: 200
+  NSW: 0
+  PREC: Accurate
+  SIGMA: 0.05

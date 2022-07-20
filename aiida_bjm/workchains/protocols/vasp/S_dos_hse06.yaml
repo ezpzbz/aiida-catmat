@@ -1,0 +1,21 @@
+stage_0:
+  ALGO: All
+  EDIFF: 1.0e-06
+  ENCUT: 500
+  IBRION: -1
+  ISMEAR: -5
+  ISPIN: 2
+  LAECHG: false
+  LCHARG: false
+  LORBIT: 11
+  LREAL: false
+  LVHAR: false
+  LWAVE: true
+  NELM: 200
+  NSW: 0
+  PREC: Accurate
+  SIGMA: 0.05
+  LHFCALC: true
+  HFSCREEN: 0.2
+  GGA: PE
+  PRECFOCK: Normal
