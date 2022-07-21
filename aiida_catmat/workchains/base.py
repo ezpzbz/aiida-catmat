@@ -1,14 +1,14 @@
-"""Base work chain to run a VASP calculation"""
+"""``BaseWorkChain`` to run a VASP calculation"""
 from pymatgen.core.structure import Structure
 from pymatgen.io.vasp import Oszicar
 
 from aiida.common import AttributeDict
 from aiida.engine import calcfunction
 from aiida.engine import BaseRestartWorkChain, ProcessHandlerReport, process_handler, while_
-from aiida.orm import Dict
+from aiida.orm import Dict, FolderData, CalcJobNode
 from aiida.plugins import CalculationFactory, DataFactory
-from aiida_catmat.calcfunctions import dict_merge
 
+from aiida_catmat.calcfunctions import dict_merge
 from aiida_catmat.parsers import STDERR_ERRS, STDOUT_ERRS
 
 StructureData = DataFactory('structure')  # pylint: disable=invalid-name
@@ -16,8 +16,15 @@ VaspCalculation = CalculationFactory('vasp.vasp')  # pylint: disable=invalid-nam
 
 
 @calcfunction
-def update_incar(incar, modifications):
-    """Merge two aiida Dict objects."""
+def update_incar(incar: Dict, modifications: Dict) -> Dict:
+    """Updates the current ``INCAR`` with proposed modifications.
+
+    Args:
+        incar (Dict): Current ``INCAR``
+        modifications (Dict): Proposed modifications to handle the error.
+    Returns:
+        Dict: The updated ``INCAR``.
+    """
     incar = incar.get_dict()
     modifications = modifications.get_dict()
     dict_merge(incar, modifications)
@@ -25,16 +32,30 @@ def update_incar(incar, modifications):
 
 
 @calcfunction
-def apply_strain_on_structure(retrived_folder):
-    """Apply 0.2 strain on structure"""
+def apply_strain_on_structure(retrived_folder: FolderData) -> StructureData:
+    """Applies 0.2 strain on structure
+
+    Args:
+        retrived_folder (FolderData): The retrieved folder in the repository that contains ``CONTCAR``
+
+    Returns:
+        StructureData: The structure after applying 0.2 strain.
+    """
     with retrived_folder.open('CONTCAR') as handler:
         structure = Structure.from_file(handler.name)
     structure.apply_strain(0.2)
     return StructureData(pymatgen_structure=structure)
 
 
-def get_stdout_errs(calculation):
-    """Parses the _scheduler-stdout.txt and reports any found errors."""
+def get_stdout_errs(calculation: CalcJobNode) -> set:
+    """Parses the ``_scheduler-stdout.txt`` and searches for pre-defined error messages.
+
+    Args:
+        calculation (CalcJobNode): The calculation `Node`.
+
+    Returns:
+        set: A set of found error messages in ``_scheduler-stdout.txt``
+    """
     errors = set()
     errors_subset_to_catch = list(STDOUT_ERRS.keys())
 
@@ -49,8 +70,15 @@ def get_stdout_errs(calculation):
     return errors
 
 
-def get_stderr_errs(calculation):
-    """Parses the _scheduler-stderr.txt and reports any found errors."""
+def get_stderr_errs(calculation: CalcJobNode) -> set:
+    """Parses the ``_scheduler-stderr.txt`` and searches for pre-defined error messages.
+
+    Args:
+        calculation (CalcJobNode): The calculation ``Node``.
+
+    Returns:
+        set: A set of found error messages in ``_scheduler-stderr.txt``
+    """
     errors = set()
     errors_subset_to_catch = list(STDERR_ERRS.keys())
 
@@ -69,7 +97,7 @@ def get_stderr_errs(calculation):
 #pylint: disable=inconsistent-return-statements
 #pylint: disable=too-many-public-methods
 class VaspBaseWorkChain(BaseRestartWorkChain):
-    """Workchain to run a VASP calculation with automated error handling and restarts."""
+    """Workchain to run a ``VASP`` calculation with automated error handling and restarts."""
 
     _process_class = VaspCalculation
 
@@ -88,9 +116,9 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
         spec.expose_outputs(VaspCalculation)
 
     def setup(self):
-        """Call the `setup` of the `BaseRestartWorkChain` and then create the inputs dictionary in `self.ctx.inputs`.
-        This `self.ctx.inputs` dictionary will be used by the `BaseRestartWorkChain` to submit the calculations in the
-        internal loop."""
+        """Call the ``setup`` of the ``BaseRestartWorkChain`` and then create the
+        inputs dictionary in ``self.ctx.inputs``. This ``self.ctx.inputs`` dictionary will be
+        used by the ``BaseRestartWorkChain`` to submit the calculations in the internal loop."""
 
         super().setup()
 
@@ -99,19 +127,20 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
         self.ctx.modifications = {}
         self.ctx.err_count = {}
 
-    def report_error_handled(self, calculation, action):
+    def report_error_handled(self, calculation: CalcJobNode, action: str) -> None:
         """Report an action taken for a calculation that has failed.
-        This should be called in a registered error handler if its condition is met and an action was taken.
-        :param calculation: the failed calculation node
-        :param action: a string message with the action taken"""
 
+        Args:
+            calculation (CalcJobNode): the failed calculation node
+            action (str): a string message with the action taken
+        """
         arguments = [calculation.process_label, calculation.pk, calculation.exit_status, calculation.exit_message]
         self.report('{}<{}> failed with exit status {}: {}'.format(*arguments))
         self.report('Action taken: {}'.format(action))
 
     @process_handler(priority=570, enabled=True)
     def handle_timeout(self, calculation):
-        """Error handler that restarts calculation finished with TIMEOUT ExitCode."""
+        """Error handler that restarts calculation finished with ``TIMEOUT`` ExitCode."""
         self.ctx.stdout_errors = get_stdout_errs(calculation)
         self.ctx.stderr_errors = get_stderr_errs(calculation)
 
@@ -133,7 +162,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
 
     @process_handler(priority=300, enabled=True)
     def handle_lreal(self, calculation):
-        """Handle 'ERROR_LREAL_SMALL_SUPERCELL' exit code"""
+        """Handle ``ERROR_LREAL_SMALL_SUPERCELL`` exit code"""
         if 'lreal' in self.ctx.stdout_errors:
             self.ctx.modifications.update({'LREAL': False})
             action = 'ERROR_LREAL_SMALL_SUPERCELL: LREAL is set to False'
@@ -142,7 +171,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
 
     @process_handler(priority=310, enabled=True)
     def handle_rsphere(self, calculation):
-        """Handle 'ERROR_RSPHERE' exit code"""
+        """Handle ``ERROR_RSPHERE`` exit code"""
         if 'rsphere' in self.ctx.stdout_errors:
             self.ctx.modifications.update({'LREAL': False})
             action = 'ERROR_RSPHERE: LREAL is set to False'
@@ -151,7 +180,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
 
     @process_handler(priority=320, enabled=True)
     def handle_zbrent(self, calculation):
-        """Handle 'ERROR_ZBRENT' exit code"""
+        """Handle ``ERROR_ZBRENT`` exit code"""
         if ('zbrent' in self.ctx.stdout_errors) and (self.ctx.err_count.get('zbrent', 0)):
             ediff = self.ctx.parameters.get_dict().get('EDIFF', 1e-6) * 0.01
             self.ctx.modifications.update({'EDIFF': ediff})
@@ -162,7 +191,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
 
     @process_handler(priority=100, enabled=False)
     def handle_tetrahedron(self, calculation):
-        """Handle 'ERROR_TETRAHEDRON' exit code"""
+        """Handle ``ERROR_TETRAHEDRON`` exit code"""
         if 'tet' in self.ctx.stdout_errors:
             if 'kspacing' in self.ctx.inputs:
                 old_kspacing = self.ctx.inputs.kspacing.value
@@ -178,7 +207,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
 
     @process_handler(priority=110, enabled=True)
     def handle_inverse_rotation_matrix(self, calculation):
-        """Handle 'ERROR_INVERSE_ROTATION_MATRIX' exit code"""
+        """Handle ``ERROR_INVERSE_ROTATION_MATRIX`` exit code"""
         if 'inv_rot_mat' in self.ctx.stdout_errors:
             self.ctx.modifications.update({'SYMPREC': 1e-8})
             action = 'ERROR_INVERSE_ROTATION_MATRIX: SYMPREC is decreased to 1E-08'
@@ -187,7 +216,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
 
     @process_handler(priority=120, enabled=True)
     def handle_subspace_matrix(self, calculation):
-        """Handle 'ERROR_SUBSPACEMATRIX' exit code"""
+        """Handle ``ERROR_SUBSPACEMATRIX`` exit code"""
         if 'subspacematrix' in self.ctx.stdout_errors:
             self.ctx.modifications.update({'LREAL': False})
             action = 'ERROR_SUBSPACEMATRIX: LREAL is set to False'
@@ -196,7 +225,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
 
     @process_handler(priority=130, enabled=True)
     def handle_amin(self, calculation):
-        """Handle 'ERROR_AMIN' exit code"""
+        """Handle ``ERROR_AMIN`` exit code"""
         if 'amin' in self.ctx.stdout_errors:
             self.ctx.modifications.update({'AMIN': 0.01})
             action = 'ERROR_AMIN: AMIN is set to 0.01'
@@ -205,7 +234,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
 
     @process_handler(priority=140, enabled=True)
     def handle_pricel(self, calculation):
-        """Handle 'ERROR_PRICEL' exit code"""
+        """Handle ``ERROR_PRICEL`` exit code"""
         if 'pricel' in self.ctx.stdout_errors:
             self.ctx.modifications.update({'ISYM': 0, 'SYMPREC': 1e-8})
             action = 'ERROR_PRICEL: ISYM is set to zero and SYMPREC to 1E-08'
@@ -214,7 +243,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
 
     @process_handler(priority=150, enabled=True)
     def handle_brions(self, calculation):
-        """Handle 'ERROR_BRIONS' exit code"""
+        """Handle ``ERROR_BRIONS`` exit code"""
         if 'brions' in self.ctx.stdout_errors:
             potim = self.ctx.parameters.get_dict().get('POTIM', 0.5) + 0.1
             self.ctx.modifications.update({'POTIM': potim})
@@ -224,7 +253,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
 
     @process_handler(priority=160, enabled=True)
     def handle_pssyevx(self, calculation):
-        """Handle 'ERROR_PSSYEVX' exit code"""
+        """Handle ``ERROR_PSSYEVX`` exit code"""
         if 'pssyevx' in self.ctx.stdout_errors:
             self.ctx.modifications.update({'ALGO': 'Normal'})
             action = 'ERROR_PSSYEVX: ALGO is set to Normal'
@@ -233,7 +262,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
 
     @process_handler(priority=170, enabled=True)
     def handle_eddrmm(self, calculation):
-        """Handle 'ERROR_EDDRMM' exit code"""
+        """Handle ``ERROR_EDDRMM`` exit code"""
         if 'eddrmm' in self.ctx.stdout_errors:
             self.ctx.modifications.update({'ISTART': 0, 'ICHARG': 2})
             if self.ctx.parameters['ALGO'] in ['Fast', 'VeryFast']:
@@ -249,7 +278,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
 
     @process_handler(priority=180, enabled=True)
     def handle_edddav(self, calculation):
-        """Handle 'ERROR_EDDDAV' exit code"""
+        """Handle ``ERROR_EDDDAV`` exit code"""
         if 'edddav' in self.ctx.stdout_errors:
             self.ctx.modifications.update({'ALGO': 'All', 'ISTART': 0, 'ICHARG': 2})
             action = 'ERROR_EDDDAV: ALGO is set to Normal, ISTART to 0 and ICHARG to 2'
@@ -258,7 +287,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
 
     @process_handler(priority=190, enabled=True)
     def handle_grad_not_orth(self, calculation):
-        """Handle 'ERROR_GRAD_NOT_ORTH' exit code"""
+        """Handle ``ERROR_GRAD_NOT_ORTH`` exit code"""
         if 'grad_not_orth' in self.ctx.stdout_errors:
             self.ctx.modifications.update({'ISMEAR': 0, 'SIGMA': 0.05})
             action = f'ERROR_GRAD_NOT_ORTH: ISMEAR is set to zero and SIGMA 0.05'
@@ -268,7 +297,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
     # TODO: double check the solution #pylint: disable=fixme
     @process_handler(priority=200, enabled=False)
     def handle_zheev(self, calculation):
-        """Handle 'ERROR_ZHEEV' exit code"""
+        """Handle ``ERROR_ZHEEV`` exit code"""
         if 'zheev' in self.ctx.stdout_errors:
             self.ctx.modifications.update({'ALGO': 'Exact'})
             action = 'ERROR_ZHEEV: ALGO is set to Exact'
@@ -277,7 +306,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
 
     @process_handler(priority=210, enabled=True)
     def handle_elf_kpar(self, calculation):
-        """Handle 'ERROR_ELF_KPAR' exit code"""
+        """Handle ``ERROR_ELF_KPAR`` exit code"""
         if 'elf_kpar' in self.ctx.stdout_errors:
             self.ctx.modifications.update({'KPAR': 1})
             action = 'ERROR_ELF_KPAR: KPAR is set to 1'
@@ -287,7 +316,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
     # TODO: double check the solution. #pylint: disable=fixme
     @process_handler(priority=220, enabled=False)
     def handle_rhosyg(self, calculation):
-        """Handle 'ERROR_RHOSYG' exit code"""
+        """Handle ``ERROR_RHOSYG`` exit code"""
         if 'rhosyg' in self.ctx.stdout_errors:
             self.ctx.modifications.update({
                 'ISYM': 0,
@@ -300,7 +329,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
     # TODO: double check the solution #pylint: disable=fixme
     @process_handler(priority=230, enabled=False)
     def handle_posmap(self, calculation):
-        """Handle 'ERROR_POSMAP' exit code"""
+        """Handle ``ERROR_POSMAP`` exit code"""
         if 'posmap' in self.ctx.stdout_errors:
             self.ctx.modifications.update({'SYMPREC': 1e-6})
             action = 'ERROR_POSMAP: SYMPREC is set to 1E-06'
@@ -309,7 +338,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
 
     @process_handler(priority=240, enabled=True)
     def handle_point_group(self, calculation):
-        """Handle 'ERROR_POINT_GROUP' exit code"""
+        """Handle ``ERROR_POINT_GROUP`` exit code"""
         if 'point_group' in self.ctx.stdout_errors:
             self.ctx.modifications.update({'ISYM': 0})
             action = 'ERROR_POINT_GROUP: ISYM is set to 0!'
@@ -318,7 +347,7 @@ class VaspBaseWorkChain(BaseRestartWorkChain):
 
     @process_handler(priority=250, enabled=True)
     def handle_zpotrf(self, calculation):
-        """Handle 'ERROR_ZPOTRF' exit code"""
+        """Handle ``ERROR_ZPOTRF`` exit code"""
         if 'zportf' in self.ctx.stdout_errors:
             try:
                 with calculation.outputs.retrieved.open('OSZICAR') as handler:
