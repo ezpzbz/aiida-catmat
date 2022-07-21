@@ -15,11 +15,12 @@ import os
 import sys
 import time
 
+import reentry
 from aiida.manage.configuration import load_documentation_profile
 
 import aiida_catmat
 
-sys.path.insert(0, os.path.abspath('.'))
+reentry.manager.scan()
 
 # -- AiiDA-related setup --------------------------------------------------
 
