@@ -19,6 +19,17 @@ Compatible with:
 # Installation, usage, and available workchains
 Please check the [documentation](http://aiida-catmat.readthedocs.io/).
 
+
+# Sample provenance graph
+Below are sample provence graphs from calculations performed using ``aiida-catmat`` package.
+
+![graph](./misc/graph.png)
+
+
+# Citation
+If you use this package in your research, please consider citing [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.6877599.svg)](https://doi.org/10.5281/zenodo.6877599)
+
+
 # Contact
 Please contact [Pezhman Zarabadi-Poor](www.github.com/pzarabadip) if you have any questions regarding this package.
 

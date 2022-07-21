@@ -16,6 +16,8 @@ The `aiida-catmat`_ plugin for `AiiDA`_
 If you use this plugin for your research, please cite the following work:
 
 .. highlights:: Pezhman Zarabadi-Poor, *AiiDA-catmat package*.
+.. image:: https://zenodo.org/badge/DOI/10.5281/zenodo.6877599.svg
+   :target: https://doi.org/10.5281/zenodo.6877599
 
 If you use AiiDA for your research, please cite the following work:
 
