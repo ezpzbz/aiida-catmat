@@ -7,7 +7,7 @@ from parsevasp.outcar import Outcar
 from aiida.common import exceptions
 from aiida.parsers import Parser
 from aiida.orm import Dict, StructureData
-from aiida.plugins import DataFactory
+# from aiida.plugins import DataFactory
 
 # StructureData = DataFactory('structure')  # pylint: disable=invalid-name
 STDOUT_ERRS = {

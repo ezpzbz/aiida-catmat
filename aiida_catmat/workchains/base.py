@@ -5,13 +5,13 @@ from pymatgen.io.vasp import Oszicar
 from aiida.common import AttributeDict
 from aiida.engine import calcfunction
 from aiida.engine import BaseRestartWorkChain, ProcessHandlerReport, process_handler, while_
-from aiida.orm import Dict, FolderData, CalcJobNode
-from aiida.plugins import CalculationFactory, DataFactory
+from aiida.orm import Dict, FolderData, CalcJobNode, StructureData
+from aiida.plugins import CalculationFactory
 
 from aiida_catmat.calcfunctions import dict_merge
 from aiida_catmat.parsers import STDERR_ERRS, STDOUT_ERRS
 
-StructureData = DataFactory('structure')  # pylint: disable=invalid-name
+# StructureData = DataFactory('structure')  # pylint: disable=invalid-name
 VaspCalculation = CalculationFactory('vasp.vasp')  # pylint: disable=invalid-name
 
 

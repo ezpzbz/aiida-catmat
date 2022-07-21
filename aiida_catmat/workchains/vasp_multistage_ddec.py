@@ -2,14 +2,14 @@
 It wraps VaspMultiStageWorkChain to a single point calculation and
 consecuently calculates the atomic charges and spin moments using DDEC method.
 """
-
+# from aiida.orm import CifData
 from aiida.common import AttributeDict
 from aiida.engine import WorkChain, ToContext
-from aiida.plugins import CalculationFactory, DataFactory, WorkflowFactory
+from aiida.plugins import CalculationFactory, WorkflowFactory
 
 VaspMultiStageWorkChain = WorkflowFactory('catmat.vasp_multistage')  #pylint: disable=invalid-name
 DdecCalculation = CalculationFactory('ddec')  # pylint: disable=invalid-name
-CifData = DataFactory('cif')  # pylint: disable=invalid-name
+# CifData = DataFactory('cif')  # pylint: disable=invalid-name
 
 
 def get_remote_folder(wcnode):

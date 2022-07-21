@@ -5,7 +5,7 @@ import yaml
 
 from pymatgen.core.structure import Structure
 
-from aiida.orm import Bool, CifData, Dict, Int, Float, List, RemoteData, Str, WorkChainNode
+from aiida.orm import Bool, CifData, Dict, Int, Float, List, RemoteData, Str, WorkChainNode, StructureData
 from aiida.common import AttributeDict
 from aiida.engine import calcfunction, WorkChain, ToContext, append_, while_
 from aiida.plugins import DataFactory, WorkflowFactory
@@ -16,7 +16,7 @@ from aiida_catmat.utils import prepare_process_inputs
 VaspBaseWorkChain = WorkflowFactory('vasp.base')  #pylint: disable=invalid-name
 PotcarData = DataFactory('vasp.potcar')  #pylint: disable=invalid-name
 KpointsData = DataFactory('array.kpoints')  #pylint: disable=invalid-name
-StructureData = DataFactory('structure')  #pylint: disable=invalid-name
+# StructureData = DataFactory('structure')  #pylint: disable=invalid-name
 
 
 def get_magmom(structure_pmg: Structure) -> dict:

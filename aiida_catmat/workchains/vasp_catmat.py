@@ -4,7 +4,7 @@ structures.
 """
 from pymatgen.core.periodic_table import Element
 
-from aiida.orm import Dict
+from aiida.orm import Dict, StructureData
 from aiida.common import AttributeDict
 from aiida.engine import calcfunction, WorkChain, ToContext, if_
 from aiida.plugins import DataFactory, WorkflowFactory
@@ -12,7 +12,7 @@ from aiida.plugins import DataFactory, WorkflowFactory
 VaspMultiStageWorkChain = WorkflowFactory('catmat.vasp_multistage')  #pylint: disable=invalid-name
 PotcarData = DataFactory('vasp.potcar')  #pylint: disable=invalid-name
 KpointsData = DataFactory('array.kpoints')  #pylint: disable=invalid-name
-StructureData = DataFactory('structure')  #pylint: disable=invalid-name
+# StructureData = DataFactory('structure')  #pylint: disable=invalid-name
 
 
 @calcfunction
