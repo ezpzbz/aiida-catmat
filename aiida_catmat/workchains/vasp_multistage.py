@@ -1,12 +1,11 @@
-"""
-VaspMultiStageWorkChain: A general purpose and modular AiiDA workchain
-developed in Morgan Materials Modelling Group in University of Bath.
-"""
+"""``VaspMultiStageWorkChain`` - A general purpose and modular AiiDA workchain
+to combine any sequence of ``VASP`` calculation"""
 import os
-
 import yaml
 
-from aiida import orm
+from pymatgen.core.structure import Structure
+
+from aiida.orm import Bool, CifData, Dict, Int, Float, List, RemoteData, Str, WorkChainNode
 from aiida.common import AttributeDict
 from aiida.engine import calcfunction, WorkChain, ToContext, append_, while_
 from aiida.plugins import DataFactory, WorkflowFactory
@@ -17,10 +16,24 @@ from aiida_catmat.utils import prepare_process_inputs
 VaspBaseWorkChain = WorkflowFactory('vasp.base')  #pylint: disable=invalid-name
 PotcarData = DataFactory('vasp.potcar')  #pylint: disable=invalid-name
 KpointsData = DataFactory('array.kpoints')  #pylint: disable=invalid-name
+StructureData = DataFactory('structure')  #pylint: disable=invalid-name
 
 
-def get_magmom(structure_pmg):
-    """Construct MAGMOM tag from structure"""
+def get_magmom(structure_pmg: Structure) -> dict:
+    """Construct ``MAGMOM`` tag from pymatgen structure object.
+    It is tricky to provide initial magnetization in an ``AiiDA`` structure object as we can only
+    have values of ``0``, ``1``, and ``-1`` stored in such object. Here, I first get a ``default_magmoms`` from
+    the ``pymatgen`` structure and based on the atomic numbers. Then,
+    I check for avilability of `spin` tag on sites in the structure. This way I can also work on structures with
+    different magnetic ordering. I put these in ``strc_magmoms`` list.
+    Finally, these two lists will be merged.
+
+    Args:
+        structure_pmg (Structure): The input structure
+
+    Returns:
+        dict: The initial ``MAGMOM`` to setup the calculation.
+    """
     # Get default
     default_magmoms = []
     for specie in structure_pmg.species:
@@ -51,8 +64,17 @@ def get_magmom(structure_pmg):
 
 
 # Get Hubbard parameters if DFT+U is requested
-def get_hubbard(structure, hubbard_tag):
-    """Constructs LDAU part of INCAR"""
+def get_hubbard(structure: StructureData, hubbard_tag: str) -> dict:
+    """Constructs ``LDAU`` related parta of ``INCAR``.
+
+    Args:
+        structure (StructureData): The ``AiiDA`` structure object
+
+        hubbard_tag (str): The `tag` which defines which set of ``U`` parameters should be used.
+
+    Returns:
+        dict: A disctionary of all needed tags related to ``DFT+U`` calculation.
+    """
     thisdir = os.path.dirname(os.path.abspath(__file__))
     yaml_path = os.path.join(thisdir, '..', 'data', 'hubbard_sets.yaml')
     with open(yaml_path, 'r') as file:
@@ -87,11 +109,16 @@ def get_hubbard(structure, hubbard_tag):
     return hubbard_dict
 
 
-def get_potcar_mapping(structure, potcar_set_tag):
-    """Cosntruct potcar_mapping
-    :param structure: the structure object
-    :param potcar_set_tag: tag the tells which potcar set should be used.
-    :return: AiiDA Dict object
+def get_potcar_mapping(structure: StructureData, potcar_set_tag: str) -> dict:
+    """Cosntructs potcar_mapping
+
+    Args:
+        structure (StructureData): The ``AiiDA`` structure object
+
+        potcar_set_tag (str): This `tag` defines which set of ``POTCAR`` files will be used.
+
+    Returns:
+        dict: A dictionary which maps atomic kinds to relevant ``POTCAR`` s.
     """
     thisdir = os.path.dirname(os.path.abspath(__file__))
     yaml_path = os.path.join(thisdir, '..', 'data', 'potcar_sets.yaml')
@@ -108,14 +135,25 @@ def get_potcar_mapping(structure, potcar_set_tag):
     return mapping
 
 
-def should_sort_structure(structure):
-    """Checks if structure needs to be sorted"""
+def should_sort_structure(structure: StructureData) -> bool:
+    """Checks whether structure after calculations needs to be sorted again.
+    If sign of magnetic moment is changed after the calculation, it groups spin-up and spin-down
+    sites togther.
+
+    Args:
+        structure (StructureData): The ``AiiDA`` structure object
+
+    Returns:
+        bool: Returns ``True`` if the structure needs to sorted.
+    """
     import functools  #pylint: disable=import-outside-toplevel
+
     structure_pmg = structure.get_pymatgen_structure(add_spin=True)
     structure_pmg_sorted = structure.get_pymatgen_structure(add_spin=True)
     structure_pmg_sorted.sort()
     species = structure_pmg.species
     species_sorted = structure_pmg_sorted.species
+
     spin = []
     for s in species:  #pylint: disable=invalid-name
         spin.append(getattr(s, 'spin', 0))
@@ -123,6 +161,7 @@ def should_sort_structure(structure):
     for s in species_sorted:  #pylint: disable=invalid-name
         spin_sorted.append(getattr(s, 'spin', 0))
     stat = []
+
     if functools.reduce(lambda i, j: i and j, map(lambda m, k: m == k, spin, spin_sorted), True):
         stat.append(False)
     else:
@@ -131,10 +170,19 @@ def should_sort_structure(structure):
 
 
 @calcfunction
-def setup_protocols(protocol_tag, structure, user_incar_settings):
-    """Read stages from provided protocol file, and
-    constructs initial INCARs from Materials Project
-    sets."""
+def setup_protocols(protocol_tag: Str, structure: StructureData, user_incar_settings: Str) -> Dict:
+    """Constructs the all ``INCAR`` settings from a ``protocol_tag`` and user-defined settings.
+
+    Args:
+        protocol_tag (Str): An string which defines the protocol to be used.
+
+        structure (StructureData): The ``AiiDA`` structure object
+
+        user_incar_settings (Str): The user-defined ``INCAR`` tags to overwrite/append protocol onces.
+
+    Returns:
+        Dict: A dictionary of all ``INCAR`` settings for the whole stages of workchain.
+    """
     # Get user-defined stages and alternative settings from yaml file
     thisdir = os.path.dirname(os.path.abspath(__file__))
     protocol_path = os.path.join(thisdir, 'protocols', 'vasp', protocol_tag.value + '.yaml')
@@ -163,12 +211,25 @@ def setup_protocols(protocol_tag, structure, user_incar_settings):
         dict_merge(protocol[key], lreal)
         dict_merge(protocol[key], user_incar_settings)
 
-    return orm.Dict(dict=protocol)
+    return Dict(dict=protocol)
 
 
 @calcfunction
-def set_kpoints(structure, kspacing, kgamma=orm.Bool(False), force_parity=orm.Bool(False)):
-    """Set kpoints mesh from kspacing"""
+def set_kpoints(structure: StructureData, kspacing: Float, kgamma: Bool, force_parity: Bool) -> KpointsData:
+    """Constructs ``KpointsData`` object.
+
+    Args:
+        structure (StructureData): The ``AiiDA`` structure object
+
+        kspacing (Float): The value for ``KSPACING``
+
+        kgamma (Bool): Set to ``True`` for Gamma-centered mesh.
+
+        force_parity (Bool): Set to ``True`` to force parity in generating the mesh.
+
+    Returns:
+        KpointsData: The ``AiiDA`` kpoints data object.
+    """
     kpoints = KpointsData()
     kpoints.set_cell_from_structure(structure)
     if kgamma:
@@ -179,16 +240,47 @@ def set_kpoints(structure, kspacing, kgamma=orm.Bool(False), force_parity=orm.Bo
 
 
 @calcfunction
-def sort_structure(structure):
-    """Apply structure sorting in case it is called"""
+def sort_structure(structure: StructureData) -> StructureData:
+    """Sorts structure if the ``should_sort_structure`` returns ``True``.
+
+    Args:
+        structure (StructureData): The ``AiiDA`` structure object
+
+    Returns:
+        StructureData: The ``AiiDA`` structure object (sorted version of input structure)
+    """
     structure_pmg = structure.get_pymatgen_structure(add_spin=True)
     structure_pmg.sort()
-    return orm.StructureData(pymatgen_structure=structure_pmg)
+    return StructureData(pymatgen_structure=structure_pmg)
 
 
 @calcfunction
-def get_stage_incar(protocol, structure, stage_tag, hubbard_tag=None, prev_incar=None, modifications=None):
-    """get INCAR for next stage"""
+def get_stage_incar(
+    protocol: Dict,
+    structure: StructureData,
+    stage_tag: Str,
+    hubbard_tag: Str = None,
+    prev_incar: Dict = None,
+    modifications: Dict = None
+) -> Dict:
+    """Constructs the ``INCAR`` tags for each stage of calculation.
+
+    Args:
+        protocol (Dict): All ``INCAR`` settings for whole workchain.
+
+        structure (StructureData): The ``AiiDA`` structure object
+
+        stage_tag (Str): Specific tag for the current stage of calculation.
+
+        hubbard_tag (Str, optional): The tag which defines which set ``U`` parameters to be used. Defaults to ``None``.
+
+        prev_incar (Dict, optional): The ``INCAR`` settings from a previous stage. Defaults to None.
+
+        modifications (Dict, optional): The modifications which are suggested by error handler. Defaults to ``None``.
+
+    Returns:
+       Dict: The resuting `INCAR`.
+    """
     next_incar = protocol[stage_tag.value]
     structure_pmg = structure.get_pymatgen_structure(add_spin=True)
     magmom = get_magmom(structure_pmg)
@@ -209,22 +301,33 @@ def get_stage_incar(protocol, structure, stage_tag, hubbard_tag=None, prev_incar
         modifications = modifications.get_dict()
         for key, value in modifications.items():
             next_incar[key] = value
-    return orm.Dict(dict=next_incar)
+    return Dict(dict=next_incar)
 
 
 @calcfunction
-def extract_wrap_results(**all_outputs):
-    """Exctract and wrap results for whole workchain"""
+def extract_wrap_results(**all_outputs: Dict) -> Dict:
+    """Exctract and wrap results for whole workchain
+
+    Returns:
+        Dict: Results in the format of a dictionary.
+    """
     results_dict = {}
     for key, value in all_outputs.items():
         results_dict[key] = value.get_dict()
         if 'complete_site_magnetizations' in results_dict[key]:
             del results_dict[key]['complete_site_magnetizations']
-    return orm.Dict(dict=results_dict)
+    return Dict(dict=results_dict)
 
 
-def get_last_input(workchain):
-    """Get last input of a successful calculation"""
+def get_last_input(workchain: WorkChainNode) -> Dict:
+    """Gets the ``INCAR`` of the last stage of a workchain.
+
+    Args:
+        workchain (WorkChainNode): An `AiiDA WorkChainNode`
+
+    Returns:
+        Dict: The ``INCAR`` dictionary of the last stage of input workchain.
+    """
     calcjobs = []
     descendants = workchain.called_descendants
     for desc in descendants:
@@ -237,7 +340,7 @@ def get_last_input(workchain):
 
 #pylint: disable=inconsistent-return-statements
 class VaspMultiStageWorkChain(WorkChain):
-    """Multi Stage Workchain"""
+    """The ``VaspMultiStageWorkChain``"""
 
     @classmethod
     def define(cls, spec):
@@ -249,32 +352,72 @@ class VaspMultiStageWorkChain(WorkChain):
             ],
             namespace='vasp_base'
         )
-        spec.input('structure', valid_type=(orm.StructureData, orm.CifData))
-        spec.input('parameters', valid_type=orm.Dict)
-        spec.input('vasp_base.vasp.kpoints', valid_type=orm.KpointsData, required=False)
-        spec.input('kspacing', valid_type=orm.Float, required=False, help='distance to generate kponits mesh')
-        spec.input('kgamma', valid_type=orm.Bool, required=False, help='gamma centered kpoints in kspacing case')
-        spec.input('force_parity', valid_type=orm.Bool, required=False, help='gamma centered kpoints in kspacing case')
-        spec.input('magmom', valid_type=orm.List, required=False, help='List of MAGMOM')
-        spec.input('potential_family', valid_type=orm.Str, required=True)
-        spec.input('potential_mapping', valid_type=orm.Dict, required=False)
-        spec.input('settings', valid_type=orm.Dict, required=False)
-        spec.input('protocol_tag', valid_type=orm.Str, required=False, default=lambda: orm.Str('S0R3S'))
-        spec.input('hubbard_tag', valid_type=orm.Str, required=False, default=lambda: orm.Str('MPSet'))
-        spec.input('max_stage_iteration', valid_type=orm.Int, default=lambda: orm.Int(2), required=False)
+        spec.input(
+            'structure', valid_type=(StructureData, CifData), help='The input structue to perform calculations on'
+        )
+        spec.input('parameters', valid_type=Dict, help='The input parameters.')
+        spec.input('vasp_base.vasp.kpoints', valid_type=KpointsData, required=False, help='kpoints mesh')
+        spec.input('kspacing', valid_type=Float, required=False, help='The kspacing tag to generate kpoints mesh')
+        spec.input('kgamma', valid_type=Bool, required=False, help='gamma centered kpoints in kspacing case')
+        spec.input(
+            'force_parity',
+            valid_type=Bool,
+            required=False,
+            help='set to True to force parity in generated kpoint mesh'
+        )
+        spec.input('magmom', valid_type=List, required=False, help='List of user supplied ``MAGMOM`` tag')
+        spec.input(
+            'potential_family',
+            valid_type=Str,
+            required=True,
+            help='The string which defines which potential (``POTCAR``) familiy we want to use'
+        )
+        spec.input(
+            'potential_mapping',
+            valid_type=Dict,
+            required=False,
+            help='The disctionary which controls which specific ``POTCAR`` user wants to use for each atom type.'
+        )
+        spec.input('settings', valid_type=Dict, required=False)
+        spec.input(
+            'protocol_tag',
+            valid_type=Str,
+            required=False,
+            default=lambda: Str('S0R3S'),
+            help='The string which controls which protocol to use for setting up the calculations.'
+        )
+        spec.input(
+            'hubbard_tag',
+            valid_type=Str,
+            required=False,
+            default=lambda: Str('MPSet'),
+            help='The string that controls which set of ``U`` parameters user wants to use'
+        )
+        spec.input(
+            'max_stage_iteration',
+            valid_type=Int,
+            default=lambda: Int(2),
+            required=False,
+            help='Maximum number of iterations/trials in case of failure.'
+        )
         spec.input(
             'potcar_set',
-            valid_type=orm.Str,
-            default=lambda: orm.Str('VASP'),
-            help='Select which potcar set should be used to construct mappin. VASP or MPRelaxSet'
+            valid_type=Str,
+            default=lambda: Str('VASP'),
+            help='Select which potcar set should be used to construct mappin. ``VASP`` or ``MPRelaxSet``'
         )
-        spec.input('restart_folder', valid_type=orm.RemoteData, required=False)
+        spec.input(
+            'restart_folder',
+            valid_type=RemoteData,
+            required=False,
+            help='Remote folder with data to use for restarting a calculation'
+        )
         spec.input(
             'vasp_base.vasp.metadata.options.parser_name',
             valid_type=str,
             default='vasp_base_parser',
             non_db=True,
-            help='Parser of the calculation: the default is cp2k_advanced_parser to get the necessary info'
+            help='Parser of the calculation: the default is ``vasp_base_parser`` to get the necessary info'
         )
 
         spec.outline(
@@ -292,10 +435,10 @@ class VaspMultiStageWorkChain(WorkChain):
         spec.exit_code(802, 'ERROR_UNRECOVERABLE_FAILURE', message='VaspBaseWorkChain could not handle the failure!')
         spec.exit_code(803, 'ERROR_KPOINTSDATA_NOT_PROVIDED', message='KpoinstData is not provided in any form.')
         spec.exit_code(804, 'ERROR_NON_CONVERGED_GEOMETRY', message='KpoinstData is not provided in any form.')
-        spec.output('structure', valid_type=orm.StructureData, required=False)
-        spec.output('output_parameters', valid_type=orm.Dict, required=True)
-        spec.output('magmom', valid_type=orm.List, required=False, help='List of MAGMOM')
-        spec.output_namespace('final_incar', valid_type=orm.Dict, required=False, dynamic=True)
+        spec.output('structure', valid_type=StructureData, required=False)
+        spec.output('output_parameters', valid_type=Dict, required=True)
+        spec.output('magmom', valid_type=List, required=False, help='List of MAGMOM')
+        spec.output_namespace('final_incar', valid_type=Dict, required=False, dynamic=True)
 
     # pylint: disable=too-many-branches
     def initialize(self):
@@ -306,10 +449,12 @@ class VaspMultiStageWorkChain(WorkChain):
 
         # Handle kpoints
         if 'kspacing' in self.inputs:
+            self.ctx.kgamma = self.inputs.kgamma if 'kgamma' in self.inputs else Bool(False)
+            self.ctx.force_parity = self.inputs.force_parity if 'force_parity' in self.inputs else Bool(False)
             if 'kgamma' in self.inputs:
                 if self.inputs.kgamma:
                     kpoints = set_kpoints( #pylint: disable=unexpected-keyword-arg
-                        self.ctx.current_structure, self.inputs.kspacing, self.inputs.kgamma, self.inputs.force_parity,
+                        self.ctx.current_structure, self.inputs.kspacing, self.ctx.kgamma, self.ctx.force_parity,
                         metadata={
                             'label':'set_kpoints',
                             'description': 'calcfuntion to construct kpoints from kspacing',
@@ -317,7 +462,7 @@ class VaspMultiStageWorkChain(WorkChain):
                         })
             else:
                 kpoints = set_kpoints( #pylint: disable=unexpected-keyword-arg
-                    self.ctx.current_structure, self.inpts.kspacing, self.inputs.force_parity,
+                    self.ctx.current_structure, self.inpts.kspacing, self.ctx.kgamma, self.ctx.force_parity,
                     metadata={
                             'label':'set_kpoints',
                             'description': 'calcfuntion to construct kpoints from kspacing',
@@ -415,37 +560,15 @@ class VaspMultiStageWorkChain(WorkChain):
 
         # Get relevant INCAR for the current stage.
         self.ctx.vasp_base.vasp.parameters = get_stage_incar( #pylint: disable=unexpected-keyword-arg
-            self.ctx.protocol, self.ctx.current_structure, orm.Str(self.ctx.stage_tag),
+            self.ctx.protocol, self.ctx.current_structure, Str(self.ctx.stage_tag),
             hubbard_tag=self.ctx.hubbard_tag,
             prev_incar=self.ctx.prev_incar,
-            modifications=orm.Dict(dict=self.ctx.modifications),
+            modifications=Dict(dict=self.ctx.modifications),
             metadata={
                 'label':'get_stage_incar',
                 'description': 'calcfuntion to get INCAR for current stage',
                 'call_link_label':'run_get_stage_incar'
             })
-
-        # Check and update input for kspacing
-        if self.ctx.vasp_base.vasp.parameters.get_dict().get('KSPACING', None):
-            self.inputs.kspacing = orm.Float(self.ctx.vasp_base.vasp.parameters.get_dict()['KSPACING'])
-            self.inputs.kgamma = orm.Bool(self.ctx.vasp_base.vasp.parameters.get_dict().get('KSPACING', False))
-            if self.inputs.kgamma:
-                kpoints = set_kpoints( #pylint: disable=unexpected-keyword-arg
-                        self.ctx.current_structure, self.inputs.kspacing, self.inputs.kgamma,
-                        metadata={
-                            'label':'set_kpoints',
-                            'description': 'calcfuntion to construct kpoints from kspacing',
-                            'call_link_label':'run_set_kpoints'
-                        })
-            else:
-                kpoints = set_kpoints( #pylint: disable=unexpected-keyword-arg
-                    self.ctx.current_structure, self.inpts.kspacing,
-                    metadata={
-                            'label':'set_kpoints',
-                            'description': 'calcfuntion to construct kpoints from kspacing',
-                            'call_link_label':'run_set_kpoints'
-                    })
-            self.ctx.vasp_base.vasp.kpoints = kpoints
 
         # Restart
         if self.ctx.restart_folder:

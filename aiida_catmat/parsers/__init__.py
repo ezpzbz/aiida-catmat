@@ -1,6 +1,4 @@
-""" AiiDA-BJM Parsers """
-import io
-import os
+"""Customized parsers for `aiida-catmat`"""
 
 from pymatgen.io.vasp import Vasprun
 from pymatgen.electronic_structure.core import Spin
@@ -8,8 +6,6 @@ from parsevasp.outcar import Outcar
 
 from aiida.common import exceptions
 from aiida.parsers import Parser
-from aiida.common import OutputParsingError, NotExistent
-from aiida.engine import ExitCode
 from aiida.orm import Dict
 from aiida.plugins import DataFactory
 

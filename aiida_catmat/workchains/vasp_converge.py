@@ -1,9 +1,8 @@
-"""VaspConvergeWorkChain
-It wraps VaspMultiStageWorkChain to series of static calculations for
+"""`VaspConvergeWorkChain` that wraps VaspMultiStageWorkChain to series of static calculations for
 getting converged ENCUT and KSPACING
 """
 
-from aiida import orm
+from aiida.orm import Dict, Float, Int, List
 from aiida.common import AttributeDict
 from aiida.engine import calcfunction, WorkChain, while_
 from aiida.plugins import DataFactory, WorkflowFactory
@@ -14,16 +13,32 @@ KpointsData = DataFactory('array.kpoints')  #pylint: disable=invalid-name
 
 
 @calcfunction
-def update_incar_encut(parameters, encut):
-    """Update INCAR with new ENCUT value"""
+def update_incar_encut(parameters: Dict, encut: Int) -> Dict:
+    """Updates the `ENCUT` tag in `INCAR`
+
+    Args:
+        parameters (Dict): `INCAR` dictionary
+        encut (Int): The new `ENCUT` value
+
+    Returns:
+        Dict: Updated `INCAR` with new `ENCUT`
+    """
     param = parameters.get_dict()
     param.update({'ENCUT': encut.value})
-    return orm.Dict(dict=param)
+    return Dict(dict=param)
 
 
 @calcfunction
-def identify_encut_convergence(threshold, **all_encut_outputs):
-    """Report energies for different ENCUT and identify the converged one"""
+def identify_encut_convergence(threshold: Float, **all_encut_outputs: Dict) -> Dict:
+    """Reports the energies for different `ENCUT` values and identifies the converged one
+
+    Args:
+        threshold (Float): The threshold for energy changes to consider a `ENCUT` converged.
+
+    Returns:
+        Dict: Results dictionary where `converged_encut` is the identified `ENCUT`. The `converged_encut_conservative`
+        is one step beyond the `converged_encut`.
+    """
     results = {}
     results['final_energy'] = {}
     results['final_energy_per_atom'] = {}
@@ -44,12 +59,20 @@ def identify_encut_convergence(threshold, **all_encut_outputs):
         else:
             results['converged_encut'
                     ] = f'Sorry! Energy difference <{dE}> is still above threshold <{threshold.value}>!'
-    return orm.Dict(dict=results)
+    return Dict(dict=results)
 
 
 @calcfunction
-def identify_kspacing_convergence(threshold, **all_kspacing_outputs):
-    """Report energies for different KSPACING and identify the converged one"""
+def identify_kspacing_convergence(threshold: Float, **all_kspacing_outputs: Dict) -> Dict:
+    """Reports energies for different KSPACING and identifies the converged one
+
+    Args:
+        threshold (Float): The threshold for energy changes to consider a `KSPACING` converged.
+
+    Returns:
+        Dict: Results dictionary where `converged_kspacing` is the identified `ENCUT`.
+        The `converged_kspacing_conservative` is one step beyond the `converged_encut`.
+    """
     results = {}
     results['final_energy'] = {}
     results['final_energy_per_atom'] = {}
@@ -71,16 +94,24 @@ def identify_kspacing_convergence(threshold, **all_kspacing_outputs):
         else:
             results['converged_kspacing'
                     ] = f'Sorry! Energy difference <{dE}> is still above threshold <{threshold.value}>!'
-    return orm.Dict(dict=results)
+    return Dict(dict=results)
 
 
 @calcfunction
-def return_final_results(encut_results, kpspacing_results):
-    """Return a single dict with converged ENCUT and KSPACING"""
+def return_final_results(encut_results: Dict, kpspacing_results: Dict) -> Dict:
+    """Returns a single dict with converged `ENCUT` and `KSPACING`
+
+    Args:
+        encut_results (Dict): The output of `ENCUT` convergene runs.
+        kpspacing_results (Dict): The output of `KSPACING` convergene runs.
+
+    Returns:
+        Dict: Final results as a disctionary which can be used for subsequent runs.
+    """
     converged_params = {}
     converged_params['ENCUT'] = encut_results.get_dict()['converged_encut']
     converged_params['KSPACING'] = float(kpspacing_results.get_dict()['converged_kspacing'])
-    return orm.Dict(dict=converged_params)
+    return Dict(dict=converged_params)
 
 
 class VaspConvergeWorkChain(WorkChain):
@@ -94,19 +125,19 @@ class VaspConvergeWorkChain(WorkChain):
         spec.expose_inputs(VaspMultiStageWorkChain)
 
         # Define VaspConvergeWorkChain specific inputs
-        spec.input('encut_list', valid_type=orm.List, required=True, help='list of ENCUT for convergence calcs.')
-        spec.input('kspacing_list', valid_type=orm.List, required=True, help='list of kspacing for convergence calcs.')
+        spec.input('encut_list', valid_type=List, required=True, help='list of ENCUT for convergence calcs.')
+        spec.input('kspacing_list', valid_type=List, required=True, help='list of kspacing for convergence calcs.')
         spec.input(
             'offset',
-            valid_type=orm.List,
-            default=lambda: orm.List(list=[0, 0, 0]),
+            valid_type=List,
+            default=lambda: List(list=[0, 0, 0]),
             required=False,
             help='Offest for kpoints generation'
         )
         spec.input(
             'threshold',
-            valid_type=orm.Float,
-            default=lambda: orm.Float(0.001),
+            valid_type=Float,
+            default=lambda: Float(0.001),
             required=True,
             help='Threshold to consider energy per atom converged!'
         )
@@ -133,7 +164,7 @@ class VaspConvergeWorkChain(WorkChain):
         )
         # Expose outputs
         spec.expose_outputs(VaspMultiStageWorkChain)
-        spec.output_namespace('convergence_results', valid_type=orm.Dict, required=False, dynamic=True)
+        spec.output_namespace('convergence_results', valid_type=Dict, required=False, dynamic=True)
 
     def initialize(self):
         """Initialize inputs and settings"""
@@ -168,7 +199,7 @@ class VaspConvergeWorkChain(WorkChain):
     def run_encut_converge(self):
         """Submit VaspMultiStageWorkChain with all items in ENCUT list"""
         for encut in self.ctx.encut_list:
-            self.ctx.inputs.parameters = update_incar_encut(self.ctx.inputs.parameters, orm.Int(encut))
+            self.ctx.inputs.parameters = update_incar_encut(self.ctx.inputs.parameters, Int(encut))
             self.ctx.inputs['metadata']['label'] = f'ENCUT_{encut}'
             self.ctx.inputs['metadata']['call_link_label'] = f'run_ENCUT_{encut}'
             running = self.submit(VaspMultiStageWorkChain, **self.ctx.inputs)
@@ -192,7 +223,7 @@ class VaspConvergeWorkChain(WorkChain):
     def run_kspacing_converge(self):
         """Submit VaspMultiStageWorkChain with all items in ENCUT list"""
         converged_encut = self.outputs['convergence_results']['ENCUT']['converged_encut']
-        self.ctx.inputs.parameters = update_incar_encut(self.ctx.inputs.parameters, orm.Int(converged_encut))
+        self.ctx.inputs.parameters = update_incar_encut(self.ctx.inputs.parameters, Int(converged_encut))
         for kspacing in self.ctx.kspacing_list:
             kpoints = KpointsData()
             kpoints.set_cell_from_structure(self.inputs.structure)

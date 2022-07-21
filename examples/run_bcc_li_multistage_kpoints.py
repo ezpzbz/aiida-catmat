@@ -37,7 +37,7 @@ def example_multistage_workchain_li(vasp_code):
     builder.vasp_base.vasp.code = vasp_code
     builder.structure = StructureData(ase=read(strc_path))
     builder.parameters = orm.Dict(dict=incar)
-    builder.protocol_tag = orm.Str('R03R3S_test')
+    builder.protocol_tag = orm.Str('S0R3S_test')
     builder.potential_family = orm.Str(potential_family)
 
     kpoints = KpointsData()

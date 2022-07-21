@@ -1,10 +1,10 @@
-"""VaspCatMatWorkChain
-It wraps VaspMultiStageWorkChain to perform two ccnsecutive
-calculation for calculation of open circuit voltage.
+"""`VaspCatMatWorkChain` wraps `VaspMultiStageWorkChain` to perform two ccnsecutive
+calculations to calculate cathode properties considering fully intercalated and deintercalated
+structures.
 """
 from pymatgen.core.periodic_table import Element
 
-from aiida import orm
+from aiida.orm import Dict
 from aiida.common import AttributeDict
 from aiida.engine import calcfunction, WorkChain, ToContext, if_
 from aiida.plugins import DataFactory, WorkflowFactory
@@ -16,8 +16,16 @@ StructureData = DataFactory('structure')  #pylint: disable=invalid-name
 
 
 @calcfunction
-def update_structure(structure, anode):
-    """Update structure by removing ions (Li/Na/...)"""
+def update_structure(structure: StructureData, anode: Dict) -> StructureData:
+    """Returns fully deintercalated structure
+
+    Args:
+        structure (StructureData): Fully intercalated structure
+        anode (Dict): A dictionary with keys to be alkali metal ion strings.
+
+    Returns:
+        StructureData: Fully deintercalted structure object.
+    """
     strc_pmg = structure.get_pymatgen_structure(add_spin=True)
     species = strc_pmg.species
     el_to_remove = list(anode.get_dict().keys())
@@ -28,8 +36,21 @@ def update_structure(structure, anode):
 
 
 @calcfunction
-def calculate_cathode_props(discharged, charged, discharged_structure, charged_structure, anode):  #pylint: disable=too-many-locals
-    """Calculate properties of cathode"""
+def calculate_cathode_props( #pylint: disable=too-many-locals
+    discharged: Dict, charged: Dict, discharged_structure: StructureData, charged_structure: StructureData, anode: Dict
+) -> Dict:
+    """Calculates and returns cathode properties.
+
+    Args:
+        discharged (Dict): Results dictionary for fully intercalated structure.
+        charged (Dict): Results dictionary for fully deintercalated structure.
+        discharged_structure (StructureData): Structure of fully intercalated structure.
+        charged_structure (StructureData): Structure of fully deintercalated structure.
+        anode (Dict): A dictionary with keys to be alkali metal ion strings and values be the chemical potential.
+
+    Returns:
+        Dict: Calcualted cathode properties.
+    """
     F_CONSTANT = 96485.3  #C/mol #pylint: disable=invalid-name
 
     def _get_stg_idx(item):
@@ -96,7 +117,7 @@ def calculate_cathode_props(discharged, charged, discharged_structure, charged_s
         f'number_of_extracted_{list(anode_info.keys())[0]}_ions': nions,
         'anode_chemical_potential': anode_mu
     }
-    return orm.Dict(dict=ocv_dict)
+    return Dict(dict=ocv_dict)
 
 
 class VaspCatMatWorkChain(WorkChain):
@@ -110,10 +131,10 @@ class VaspCatMatWorkChain(WorkChain):
         spec.expose_inputs(VaspMultiStageWorkChain)
 
         # Define VaspCatMatWorkChain specific inputs
-        spec.input('anode', valid_type=orm.Dict, required=True, help='Chemical potential of anode')
+        spec.input('anode', valid_type=Dict, required=True, help='Chemical potential of anode')
         spec.input(
             'discharged_calculated_data',
-            valid_type=orm.Dict,
+            valid_type=Dict,
             required=False,
             help='Output dictionary of previously calculated structure!'
         )
@@ -134,7 +155,7 @@ class VaspCatMatWorkChain(WorkChain):
             cls.results,
         )
         # Expose outputs
-        spec.output('cathode_props', valid_type=orm.Dict, required=False, help='output dictionary with OCV results')
+        spec.output('cathode_props', valid_type=Dict, required=False, help='output dictionary with OCV results')
 
     def initialize(self):
         """Initialize inputs and settings"""
