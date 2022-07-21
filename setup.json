@@ -45,6 +45,9 @@
         ],
         "docs": [
             "myst-nb~=0.10.1",
+            "sphinx",
+            "sphinxcontrib-contentui",
+            "sphinxcontrib-details-directive",
             "sphinx-rtd-theme"
         ]
     }
