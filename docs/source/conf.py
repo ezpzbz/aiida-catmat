@@ -19,6 +19,8 @@ from aiida.manage.configuration import load_documentation_profile
 
 import aiida_catmat
 
+sys.path.insert(0, os.path.abspath('.'))
+
 # -- AiiDA-related setup --------------------------------------------------
 
 # Load the dummy profile even if we are running locally, this way the documentation will succeed even if the current
