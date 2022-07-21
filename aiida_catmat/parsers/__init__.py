@@ -6,10 +6,10 @@ from parsevasp.outcar import Outcar
 
 from aiida.common import exceptions
 from aiida.parsers import Parser
-from aiida.orm import Dict
+from aiida.orm import Dict, StructureData
 from aiida.plugins import DataFactory
 
-StructureData = DataFactory('structure')  # pylint: disable=invalid-name
+# StructureData = DataFactory('structure')  # pylint: disable=invalid-name
 STDOUT_ERRS = {
     'tet': [
         'Tetrahedron method fails for NKPT<4', 'Fatal error detecting k-mesh', 'Fatal error: unable to match k-point',
