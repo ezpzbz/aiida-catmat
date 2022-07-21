@@ -24,10 +24,10 @@
         ],
         "aiida.workflows": [
             "vasp.base = aiida_catmat.workchains:VaspBaseWorkChain",
-            "bjm.vasp_multistage = aiida_catmat.workchains:VaspMultiStageWorkChain",
-            "bjm.vasp_converge = aiida_catmat.workchains:VaspConvergeWorkChain",
-            "bjm.vasp_catmat = aiida_catmat.workchains:VaspCatMatWorkChain",
-            "bjm.vasp_multistage_ddec = aiida_catmat.workchains:VaspMultiStageDdecWorkChain"
+            "catmat.vasp_multistage = aiida_catmat.workchains:VaspMultiStageWorkChain",
+            "catmat.vasp_converge = aiida_catmat.workchains:VaspConvergeWorkChain",
+            "catmat.vasp_catmat = aiida_catmat.workchains:VaspCatMatWorkChain",
+            "catmat.vasp_multistage_ddec = aiida_catmat.workchains:VaspMultiStageDdecWorkChain"
         ]
     },
     "data_files": [
@@ -42,6 +42,10 @@
             "yapf==0.28.0",
             "prospector==1.2.0",
             "pylint==2.4.4"
+        ],
+        "docs": [
+            "myst-nb~=0.10.1",
+            "sphinx-book-theme"
         ]
     }
 }
